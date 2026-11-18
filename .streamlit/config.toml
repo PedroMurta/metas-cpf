@@ -1,0 +1,10 @@
+# Tema institucional para todo app aberto a partir desta raiz (streamlit run <caminho>/app.py).
+# O Streamlit só lê o config.toml da pasta de onde é executado; sem ele, cai no tema padrão
+# (seleções vermelhas e listas no modo escuro do sistema).
+[theme]
+base = "light"
+primaryColor = "#0095cc"
+backgroundColor = "#f0f2f5"
+secondaryBackgroundColor = "#f7f8fa"
+textColor = "#1a2332"
+font = "sans serif"

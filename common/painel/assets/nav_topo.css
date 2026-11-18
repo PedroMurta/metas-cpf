@@ -1,0 +1,40 @@
+/* =================================================================
+   Navegação no topo — só para apps com st.navigation(position="top").
+   O header nativo (stHeader) desce para logo abaixo da barra navy do cabecalho() e vira a faixa de
+   abas do padrão (11px, caixa-alta, sublinhado azul). Juntar ao CSS do estudo (aplicar_tema(css_extra)).
+   ================================================================= */
+:root { --nav-height: 44px; }
+
+header[data-testid="stHeader"] {
+    top: var(--header-height); height: var(--nav-height);
+    background: var(--bg-surface); border-bottom: 1px solid var(--border);
+    pointer-events: auto;
+}
+header[data-testid="stHeader"] [data-testid="stToolbar"] { height: var(--nav-height); align-items: center; }
+
+[data-testid="stTopNavLink"], [data-testid="stTopNavSection"] {
+    min-height: var(--nav-height); border-radius: 0; background: transparent;
+    border-bottom: 2px solid transparent; color: var(--text-secondary);
+}
+/* texto dos links (o ícone material mantém a própria fonte) */
+[data-testid="stTopNavLink"] span:not([data-testid="stIconMaterial"]),
+[data-testid="stTopNavSection"] p, [data-testid="stTopNavSection"] span:not([data-testid="stIconMaterial"]) {
+    color: inherit; font: 600 11px var(--font-body); letter-spacing: .04em; text-transform: uppercase;
+}
+[data-testid="stTopNavLink"] [data-testid="stIconMaterial"], [data-testid="stTopNavSection"] [data-testid="stIconMaterial"] { color: inherit; }
+[data-testid="stTopNavLink"]:hover, [data-testid="stTopNavSection"]:hover { background: var(--cyan-subtle); color: var(--cyan); }
+[data-testid="stTopNavLink"][aria-current="page"],
+[data-testid="stTopNavLink"][aria-selected="true"] { border-bottom-color: var(--cyan); color: var(--cyan); }
+
+/* conteúdo começa abaixo da barra navy + faixa de abas */
+.block-container { padding-top: calc(var(--header-height) + var(--nav-height) + var(--sp-8)); }
+[data-testid="stSidebarContent"] { padding-top: calc(var(--header-height) + var(--sp-2)); }
+[data-testid="stExpandSidebarButton"] { position: static; width: 36px; height: 36px; }
+
+@media (max-width: 991px) {
+    .block-container { padding-top: calc(var(--header-height) + var(--nav-height) + var(--sp-6)); }
+}
+@media (max-width: 767px) {
+    .block-container { padding-top: calc(var(--header-height) + var(--nav-height) + var(--sp-4)); }
+}
+
