@@ -1,0 +1,18 @@
+/* estudo.css: CSS próprio do meta_cpfs_novos (conta passo a passo da aba Como a meta é calculada).
+   Barra lateral e listas vêm de common/painel/assets/sidebar.css. */
+.streamlit-conta { display: grid; gap: 6px; margin: 4px 0; }
+.streamlit-conta > div {
+    display: grid; grid-template-columns: minmax(140px, 220px) 1fr; gap: 4px 14px; padding: 8px 0;
+    border-bottom: 1px dashed rgba(15,37,64,.12); font: 400 14px/1.45 var(--font-body); color: #5a6a7e;
+}
+.streamlit-conta > div:last-child { border-bottom: 0; font-size: 16px; }
+.streamlit-conta span { font-weight: 700; color: #0f2540; }
+.streamlit-conta b { color: #0095cc; font-weight: 600; }
+@media (max-width: 640px) { .streamlit-conta > div { grid-template-columns: 1fr; } }
+
+/* Tabelas: dados centralizados (pedido de 19/11), como no meta_cpfs */
+.streamlit-vidro-tabela th, .streamlit-vidro-tabela td { text-align: center !important; }
+
+/* Fórmulas: folga para a fração não ser cortada em cima */
+.stLatex .katex-display { padding: 6px 0; margin: 4px 0; overflow: visible; }
+.stLatex, .stLatex > div, [data-testid="stMarkdownContainer"] .katex-display { overflow: visible !important; }

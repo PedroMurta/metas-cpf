@@ -15,7 +15,7 @@ _ORIGEM = {
     **dict.fromkeys("anel medidor radar rosca velocimetro".split(), "circulares"),
     **dict.fromkeys("achado aplicar_css cabecalho cartao divisao ficha frase indicador_empresas kpis selo_meta "
                     "tabela titulo_caixa valores_meta vazio".split(), "componentes"),
-    **dict.fromkeys("barras_agrupadas barras_divergentes barras_h barras_proporcao colunas desvio dispersao empilhado "
+    **dict.fromkeys("barras_agrupadas barras_divergentes barras_h barras_proporcao colunas desvio dispersao empilhado evolucao "
                     "faixa_linha faixa_ranking linha_meta mapa_calor piramide pontos pontos_ranking ranking saldo "
                     "serie_temporal".split(), "graficos"),
     **dict.fromkeys("bolhas cenario matriz rastro".split(), "plano"),

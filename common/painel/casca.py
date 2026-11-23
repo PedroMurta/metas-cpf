@@ -32,12 +32,24 @@ def _logo() -> str:
     return base64.b64encode((ASSETS / "logo-light.png").read_bytes()).decode("ascii")
 
 
-def aplicar_tema(*css_extra: Path, topo: bool = False) -> None:
+def aplicar_tema(*css_extra: Path, topo: bool = False, filtros: bool = False) -> None:
     """Fontes, tokens Claro, casca e vidro num único <style>. `topo=True` para st.navigation(position="top").
-    `css_extra`: CSS próprios do estudo (prefixo streamlit-). Chamar uma vez por página."""
+    `filtros=True`: barra lateral no padrão da Matriz (cartões por seção via `secao_lateral`, st.pills como trilha
+    animada, listas suspensas navy). `css_extra`: CSS próprios do estudo (prefixo streamlit-). Uma vez por página."""
     base = [ASSETS / "variaveis-claro.css", ASSETS / "casca.css", ASSETS / "vidro.css"]
     base += [ASSETS / "nav_topo.css"] if topo else []
+    base += [ASSETS / "sidebar.css"] if filtros else []
     st.html(f"<style>{FONTES}\n{_ler(*base, *css_extra)}</style>")
+    if filtros:
+        st.html(f"<script>{_ler(ASSETS / 'filtros-animados.js')}</script>", unsafe_allow_javascript=True)
+
+
+def secao_lateral(titulo: str, chave: str):
+    """Cartão de uma seção da barra lateral (padrão da Matriz): `with secao_lateral("Filtros", "filtros"): ...`.
+    Chamar dentro de `with st.sidebar:`; exige aplicar_tema(filtros=True)."""
+    caixa = st.container(key=f"sb_card_{chave}")
+    caixa.html(f"<div class='streamlit-sb-sec-titulo'>{escape(titulo)}</div>")
+    return caixa
 
 
 def cabecalho(titulo: str, etapa: str = "") -> None:

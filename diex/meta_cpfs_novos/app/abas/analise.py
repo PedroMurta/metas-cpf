@@ -1,0 +1,129 @@
+"""Aba Análise: crescimento dos CPFs distintos de 2023 a 2026 nas unidades maduras (5+ anos em 2023, anos completos),
+com as duas médias: crescimento constante (geométrica) e crescimento médio anual (aritmética)."""
+import numpy as np
+import pandas as pd
+import streamlit as st
+
+from abas.comum import CINZA, assunto, cor, mil, num, pct, rotulos_anos
+from common.metas import media_geometrica
+from common.painel.classico import FORTE, divergente
+from common import painel as gt
+from common.painel.casca import nota
+from scripts import dados as D
+
+FAIXAS = [(-np.inf, 0, "Queda"), (0, .05, "0% a\n5%"), (.05, .10, "5% a\n10%"), (.10, .20, "10% a\n20%"),
+          (.20, np.inf, "20% ou\nmais")]
+
+
+def _recorte(f) -> tuple[tuple, str]:
+    """Recorte próprio da aba: 4 especialidades do SEST (padrão) ou todas; SENAT sempre com todas as modalidades."""
+    medida = f.medida if f.entidade == "SENAT" else "atendimentos"
+    if f.entidade == "SENAT":
+        return (f.entidade, None, medida), f"SENAT · todas as modalidades · produção em {medida}"
+    esc = st.pills("Especialidades da análise", ["4 especialidades", "Todas"], default="4 especialidades",
+                   key="an_esp", help="4 especialidades: odontologia, fisioterapia, psicologia e nutrição. "
+                                      "Todas: inclui Turma SEST, campanhas e demais.") or "4 especialidades"
+    if esc == "Todas":
+        return (f.entidade, None, medida), f"{f.entidade} · todas as especialidades"
+    return (f.entidade, tuple(D.AREAS_SEST), medida), "4 especialidades do SEST"
+
+
+MEDIAS = {"geometrica": "Crescimento constante (média geométrica)",
+          "aritmetica": "Crescimento médio anual (média aritmética)"}
+
+
+def _evolucao(f, a, chave, rotulo) -> None:
+    """Colunas ano a ano com o selo da variação (Nacional das unidades maduras ou a unidade do filtro)."""
+    s = a["serie"]
+    if f.unidade in a["pessoas"].index:
+        serie, nome = s.xs(f.unidade, level="id_unidade").pessoas, a["unidades"].rotulo.get(f.unidade)
+    else:
+        serie, nome = a["total"].pessoas, f"{f.entidade}, {len(a['pessoas'])} unidades maduras"
+    v = serie / serie.iloc[0] - 1
+    anos = len(serie) - 1
+    g = media_geometrica(serie.iloc[0], serie.iloc[-1], anos)
+    neg, _, pos = divergente(assunto(f.entidade))
+    gt.cabecalho("Evolução", f"{nome}: {pct(v.iloc[-1], 1, sinal=True)} entre {serie.index[0]} e {serie.index[-1]}, "
+                             f"crescimento constante de {pct(g, 1)} ao ano",
+                 f"CPFs distintos na unidade. Os selos mostram a variação sobre o ano anterior; a linha tracejada, o "
+                 f"crescimento constante (média geométrica) de {pct(g, 1)} ao ano. {rotulo}. "
+                 f"{serie.index[-1]} é estimativa (barra clara).")
+    rot = rotulos_anos(serie.index)
+    gt.grafico(f"an_evo_{hash(chave)}_{f.unidade}", gt.evolucao(
+        rot, serie.tolist(), cor(f.entidade), textos=[mil(x) for x in serie], cores_var=(neg, pos),
+        apagadas=[len(rot) - 1],
+        tendencia={"nome": f"{pct(g, 1, sinal=True)} ao ano", "valores": [serie.iloc[0] * (1 + g) ** i for i in range(anos + 1)],
+                   "cor": FORTE}), 360)
+
+
+def render(f) -> None:
+    chave, rotulo = _recorte(f)
+    a = D.maduras(*chave)
+    t, cp, u = a["total"], a["pessoas"], a["unidades"]
+    g, ar = a["geometrica"], a["aritmetica"]
+    destaque = cor(f.entidade)
+    medida = f.rotulo_medida if chave[2] == f.medida else chave[2]
+    n = len(cp)
+    var = t.loc[2026] / t.loc[2023] - 1
+    var25 = t.loc[2025] / t.loc[2023] - 1
+    gn = media_geometrica(t.pessoas.iloc[0], t.pessoas.iloc[-1], len(t) - 1)
+    an = t.pessoas.pct_change().iloc[1:].mean()
+
+    with gt.cartao("an_kpis", compacto=True):
+        gt.kpis([
+            ("Unidades analisadas", num(n), f"de {num(a['n_total'])} · inauguradas até {a['inaug_ate']}", ""),
+            ("CPFs distintos 2023→2026 (estimativa)", pct(var.pessoas, 1, sinal=True),
+             f"{pct(var25.pessoas, 1, sinal=True)} até 2025, só anos fechados", ""),
+            ("Crescimento constante", pct(gn, 1, sinal=True), "média geométrica · Nacional", ""),
+            ("Crescimento médio anual", pct(an, 1, sinal=True), "média aritmética · Nacional", ""),
+        ])
+
+    with gt.cartao("an_evolucao"):
+        _evolucao(f, a, chave, rotulo)
+
+    col1, col2 = st.columns([2, 3], gap="medium")
+    with col1, gt.cartao("an_faixas"):
+        qual = st.pills("Média", list(MEDIAS), default="geometrica", key="an_media",
+                        format_func=lambda k: "Constante (geométrica)" if k == "geometrica" else "Anual (aritmética)",
+                        label_visibility="collapsed") or "geometrica"
+        r = a[qual]
+        cont = [int(((r >= lo) & (r < hi)).sum()) for lo, hi, _ in FAIXAS]
+        rot = [x for *_, x in FAIXAS]
+        topo = rot[int(np.argmax(cont))]
+        gt.cabecalho(MEDIAS[qual], f"A faixa mais comum é {'a de queda' if topo == 'Queda' else topo.replace(chr(10), ' ')}: "
+                                   f"{num(max(cont))} unidades",
+                     "CPFs distintos de 2023 a 2026, por unidade")
+        cores = [CINZA] * len(cont)
+        cores[int(np.argmax(cont))] = destaque
+        gt.grafico(f"an_faixas_{hash(chave)}_{qual}", gt.colunas(rot, cont, cores, casas=0), 300)
+
+    with col2, gt.cartao("an_anos"):
+        c = a["cres"]
+        linhas = []
+        for ano in (2024, 2025, 2026):
+            for m, nome in (("pessoas", "CPFs distintos"), ("producao", medida.capitalize())):
+                v = c[m][ano].replace([np.inf, -np.inf], np.nan).dropna()
+                linhas.append({"Ano": f"{ano}{' (estimativa)' if ano == 2026 else ''}", "Medida": nome,
+                               "Total": pct(t.loc[ano, m] / t.loc[ano - 1, m] - 1, 1, sinal=True),
+                               "Metade das unidades": f"{pct(v.quantile(.25), 1)} a {pct(v.quantile(.75), 1)}",
+                               "Com queda": num((v < 0).sum())})
+        gt.cabecalho("Ano a ano", "Variação de cada ano sobre o anterior",
+                     "Total: soma das unidades · metade das unidades: as do meio, sem o quarto mais baixo e o mais alto")
+        gt.tabela(pd.DataFrame(linhas), texto=2)
+
+    with gt.cartao("an_unidades"):
+        gt.cabecalho("Por unidade", "CPFs distintos de cada unidade madura",
+                     f"{rotulo} · ordem por tipologia e número · 2026 é estimativa")
+        ids = u.index
+        df = pd.DataFrame({"Unidade": u.rotulo, "Conselho": u.conselho_curto})
+        for ano in (2023, 2024, 2025, 2026):
+            df[f"{ano} (estimativa)" if ano == 2026 else str(ano)] = cp.loc[ids, ano].map(num)
+        df["Constante (geométrica)"] = g.loc[ids].map(lambda v: pct(v, 1, sinal=True))
+        df["Médio anual (aritmética)"] = ar.loc[ids].map(lambda v: pct(v, 1, sinal=True))
+        nome = u.rotulo.get(f.unidade) if f.unidade != D.NACIONAL else None
+        gt.tabela(df, destaque=("Unidade", nome) if nome else None, texto=2, altura=480)
+
+    nota(f"CPF distinto: a pessoa conta uma vez por unidade e por ano, não importa quantas vezes foi atendida. "
+         f"Unidades inauguradas até {a['inaug_ate']} (5 anos ou mais em 2023) e com produção nos 12 meses de 2023, "
+         "2024 e 2025 no recorte escolhido. Assim, abertura de unidade ou de especialidade no meio do período não "
+         "infla o crescimento. 2026 é estimativa: realizado até outubro com projeção para novembro e dezembro.")

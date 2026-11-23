@@ -1,8 +1,8 @@
 /* Filtros animados: st.pills / st.segmented_control viram uma trilha com indicador branco que desliza até a opção
  * escolhida (mesmo movimento do seletor de período do guia interativo).
  * Não insere nós no DOM do React: só grava a posição da opção ativa em variáveis CSS da trilha
- * (--seg-x, --seg-y, --seg-w, --seg-h, --seg-o); o desenho e a animação ficam no CSS (style_estudo.css, .streamlit-seg-trilha).
- * Copiado da Matriz; aqui injetado inline por meta_cpfs.py; um MutationObserver acompanha as re-renderizações do Streamlit. */
+ * (--seg-x, --seg-y, --seg-w, --seg-h, --seg-o); o desenho e a animação ficam no CSS (assets/sidebar.css, .streamlit-seg-trilha).
+ * Copiado da Matriz; injetado inline por common.painel.casca.aplicar_tema(filtros=True); um MutationObserver acompanha as re-renderizações do Streamlit. */
 (function () {
   if (window.__filtrosAnimados) { window.__filtrosAnimados(); return; }
   const SEL = '[data-testid="stButtonGroup"] [role="radiogroup"]';

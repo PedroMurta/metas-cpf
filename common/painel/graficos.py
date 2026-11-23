@@ -284,6 +284,54 @@ def colunas(rotulos, valores, cores, casas: int = 1, sufixo: str = "", *, textos
                                   **({"rich": rico} if rico else {})}}]}
 
 
+def evolucao(rotulos, valores, cor: str, *, textos=None, cores_var: tuple[str, str] = (CORAL, AZUL), casas: int = 1,
+             apagadas=(), tendencia: dict | None = None, comparar: dict[int, int] | None = None) -> dict:
+    """Colunas por período com selo da variação sobre o período anterior acima de cada coluna (▲/▼ e %), como o
+    gráfico de evolução do meta_cpfs. textos: rótulo de cada coluna (ex.: "2,7 mil"); cores_var: (queda, alta) dos
+    selos (no estudo, divergente(): nunca verde × vermelho); apagadas: índices de colunas em tom claro (projeção).
+    tendencia: {nome, valores, cor?} linha tracejada sobre as colunas (ex.: trajetória do crescimento constante).
+    comparar: {coluna: coluna de referência} para selos que não comparam com a anterior (ex.: cenários sobre o último ano)."""
+    vals = [finito(v) for v in valores]
+    textos = list(textos) if textos else [br(v, 0) for v in vals]
+    topo = max([v for v in vals if v is not None] + [0]) or 1
+    dados = [{"value": v, "txt": t,
+              "itemStyle": {"color": rgba(cor, .45) if i in apagadas else cor, "borderRadius": [6, 6, 0, 0],
+                            "shadowBlur": 8, "shadowColor": rgba(cor, .25)}}
+             for i, (v, t) in enumerate(zip(vals, textos))]
+    selos = []
+    comparar = comparar or {}
+    for i in range(len(vals)):
+        j = comparar.get(i, i - 1)
+        if j < 0 or not vals[i] or not vals[j]:
+            selos.append({"value": None})
+            continue
+        var = 100 * (vals[i] / vals[j] - 1)
+        c = cores_var[1] if var >= 0 else cores_var[0]
+        selos.append({"value": topo * 1.28, "label": {
+            "formatter": f"{'▲' if var >= 0 else '▼'} {br(abs(var), casas)}%", "color": c,
+            "backgroundColor": rgba(c, .10), "borderColor": rgba(c, .40)}})
+    return {**base(),
+            "grid": {"left": 8, "right": 8, "top": 16, "bottom": 8, "containLabel": True},
+            "tooltip": tooltip(trigger="item", formatter=JsCode(
+                "function (p) { return p.seriesIndex ? '' : '<b>' + " + _ESC_NOME + " + '</b><br>' + p.data.txt; }")),
+            "xAxis": eixo_categoria(rotulos, axisLabel={"color": TEMA["fraco"], "fontSize": 11, "interval": 0}),
+            "yAxis": eixo_valor(show=False, min=0, max=topo * 1.42),
+            "series": [
+                {"type": "bar", "barMaxWidth": 64, "animationDelay": cascata(80), "data": dados,
+                 "label": {"show": True, "position": "top", "color": TEMA["valor"], "fontSize": 12, "fontWeight": 700,
+                           "formatter": JsCode("function (p) { return p.data.txt; }")}},
+                {"type": "scatter", "symbolSize": 0, "silent": True, "tooltip": {"show": False}, "data": selos,
+                 "animationDelay": cascata(80, 300),
+                 "label": {"show": True, "position": "inside", "fontSize": 12, "fontWeight": 700, "padding": [5, 8],
+                           "borderWidth": 1, "borderRadius": 6}},
+                *([{"type": "line", "name": tendencia["nome"], "data": [finito(v) for v in tendencia["valores"]],
+                    "symbol": "circle", "symbolSize": 6, "z": 5, "tooltip": {"show": False},
+                    "lineStyle": {"type": "dashed", "width": 2, "color": tendencia.get("cor", TEMA["valor"])},
+                    "itemStyle": {"color": tendencia.get("cor", TEMA["valor"])},
+                    "endLabel": {"show": True, "formatter": tendencia["nome"], "color": tendencia.get("cor", TEMA["valor"]),
+                                 "fontSize": 11, "fontWeight": 600, "offset": [-110, -16]}}] if tendencia else [])]}
+
+
 def barras_proporcao(rotulos, series: list[tuple[str, list, str]], casas: int = 2, rotulo: int | None = 0) -> dict:
     """Barras horizontais empilhadas em % (0–100), uma por rótulo (1º no topo): cada série (nome, valores em %, cor)
     é uma parte. rotulo: índice da série que mostra o valor dentro da barra (None = nenhuma). Legenda embaixo."""
