@@ -13,7 +13,7 @@ for pasta in (APP.parents[2], APP.parent, APP):   # raiz (common), projeto (mode
 
 import streamlit as st  # noqa: E402
 
-from abas import analise, comparacao, gap, introducao, mensal, mercado  # noqa: E402
+from abas import analise, comparacao, gap, introducao, mercado  # noqa: E402
 from common.painel.casca import aplicar_tema, cabecalho, rodape  # noqa: E402
 from scripts.sidebar import filtros, visao  # noqa: E402
 
@@ -23,8 +23,7 @@ cabecalho("Propostas de meta 2027")
 
 f = visao(filtros())
 ABAS = {"Introdução": introducao.render, "Proposta 1": lambda f: gap.render(f, 1), "Proposta 2": lambda f: gap.render(f, 2),
-        "Proposta 3": mercado.render, "Comparação": comparacao.render, "Análise": analise.render,
-        "Mês a mês": mensal.render}
+        "Proposta 3": mercado.render, "Comparação": comparacao.render, "Análise": analise.render}   # "Mês a mês" (abas/mensal.py) oculta a pedido, 23/11
 for aba, render in zip(st.tabs(list(ABAS)), ABAS.values()):
     with aba:
         render(f)
