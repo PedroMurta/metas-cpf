@@ -1,11 +1,13 @@
 """Dados do painel: chamadas ao modelo com cache. Sem desenho."""
 import re
 
+import duckdb
 import pandas as pd
 import streamlit as st
 
 import modelo as M
 import recortes as R
+from common.painel.classico import MESES_PT
 
 COMBINADA = R.COMBINADA
 CAMPANHA = "Campanha · "            # prefixo dos tipos de campanha (SEST)
@@ -18,6 +20,7 @@ SENAT_MODALIDADES = {"Presencial"}
 SEP = " · "                                                 # grupo SENAT = "<tipo de curso> · <modalidade>"
 PESOS = [round(100 * w) for w in M.PESOS]
 NACIONAL = 0
+PARTIDA = "2023 partida"                 # coluna de 2023 sem histórico (aba Mês a mês)
 TIPOLOGIAS = ["A", "B", "C", "CN", "D", "DN"]
 NOME = re.compile(r"^UNIDADE\s+(?P<tip>CN|DN|A|B|C|D)\s+(?P<num>\d+)\s+-\s+(?P<cidade>.+)$")
 REGRA = {"fórmula": "Acima da referência", "mediana": "Mediana nacional", "própria": "Mediana própria", "ritmo": "Ritmo das horas", "nacional": "Crescimento Nacional"}
@@ -68,15 +71,17 @@ def medida(entidade: str) -> str:
     return "horas" if entidade == "SENAT" else "atendimentos"
 
 
-def _proposta(n: int, entidade: str, campanhas: bool) -> dict:
+def _proposta(n: int, entidade: str, campanhas: bool, ano: bool = False) -> dict:
     sel, med = _lista(selecao_proposta(n, entidade, campanhas)), medida(entidade)
-    return M.proposta1(entidade, sel, med) if n == 1 else M.proposta2(entidade, sel, med)
+    p = (M.proposta1 if n == 1 else M.proposta2)(entidade, sel, med, ano)
+    g = M.crescimento_nacional(entidade, sel, med, "contagem", ano) if entidade == "SEST" else None   # delta Nacional: piso e Proposta 3
+    return p | {"metas": M.com_piso(p["metas"], g), "ano": ano, "nacional": g}
 
 
 @st.cache_data(show_spinner="Calculando a meta…")
-def gap(n: int, entidade: str, campanhas: bool = False) -> dict:
-    """Propostas 1 e 2 em CPFs distintos."""
-    p = _proposta(n, entidade, campanhas)
+def gap(n: int, entidade: str, campanhas: bool = False, ano: bool = False) -> dict:
+    """Propostas 1 e 2 em pessoas: contagem de 12 meses no SEST ou, com `ano`, CPFs distintos no ano completo (SENAT: sempre)."""
+    p = _proposta(n, entidade, campanhas, ano)
     return p | {"unidades": _rotular(p["unidades"].loc[p["universo"]])}
 
 
@@ -88,33 +93,82 @@ def horas(n: int) -> dict:
 
 
 @st.cache_data(show_spinner="Calculando a meta pelo fator de mercado…")
-def mercado(entidade: str, escopo: int = 1) -> dict:
-    """Proposta 3 sobre o esperado da seleção inicial (escopo 1) ou de todas as especialidades (escopo 2, sem campanhas)."""
-    p = M.proposta3(entidade, _proposta(escopo, entidade, False))
+def mercado(entidade: str, escopo: int = 1, ano: bool = False) -> dict:
+    """Proposta 3 sobre a seleção inicial (escopo 1) ou todas as especialidades (escopo 2, sem campanhas). SEST: delta Nacional (o
+    crescimento constante 2023→2026 das unidades maduras, na contagem da meta); SENAT: esperado da própria unidade."""
+    b = _proposta(escopo, entidade, False, ano)
+    p = M.proposta3(entidade, b, b["nacional"])
     return p | {"unidades": _rotular(p["unidades"].loc[p["universo"]]), "resumo": M.resumo_mercado(p["metas"])}
 
 
-def serie_de(p: dict, unidade: int, coluna: str = "pessoas") -> pd.Series:
+def rotulo_regra(m: pd.DataFrame, k: int) -> pd.Series:
+    """Regra de cada unidade no cenário de k%: a que deu a meta ou o crescimento mínimo."""
+    return m.regra.map(REGRA).mask(m[f"piso_{k}"], "Crescimento mínimo")
+
+
+def serie_de(p: dict, unidade: int, coluna: str = "contagem") -> pd.Series:
     """Ano → valor da unidade ou, no Nacional, a soma das unidades com meta."""
     s = p["serie"][coluna]
     return s.xs(unidade, level="id_unidade") if unidade in p["metas"].index else s.groupby(level="ano").sum()
 
 
 @st.cache_data(show_spinner=False)
-def serie_todas(entidade: str, selecao: tuple[str, ...]) -> pd.Series:
-    """CPFs distintos por ano somando todas as unidades (inclusive as sem meta), como na apresentação."""
-    return R.recorte(entidade, list(selecao)).groupby("ano").pessoas.sum()
+def serie_todas(entidade: str, selecao: tuple[str, ...], ano: bool = False) -> pd.Series:
+    """Contagem por ano (12 meses ou, com `ano`, CPFs distintos) somando todas as unidades (inclusive as sem meta)."""
+    if ano:
+        return R.recorte(entidade, list(selecao)).groupby("ano").pessoas.sum()
+    return R.contagem(entidade, list(selecao)).groupby("ano").contagem.sum()
+
+
+def _completar(t: pd.DataFrame, total: float) -> pd.DataFrame:
+    """Meses de 2026 depois do corte = o que falta para a estimativa do ano, repartido pelo peso desses meses em 2023–2025."""
+    fim = t.index[t.index > R.CORTE]
+    peso = t.loc[fim, list(M.ANOS_FRACAO)].sum(axis=1)
+    t = t.copy()
+    t.loc[fim, R.ANO_CORRENTE] = (total - t.loc[:R.CORTE, R.ANO_CORRENTE].sum()) * peso / peso.sum()
+    return t
+
+
+@st.cache_data(show_spinner=False)
+def mensal() -> dict:
+    """SEST, 4 especialidades, unidades com meta: contagem de 12 meses por mês (linhas) em cinco colunas (2023 com histórico, 2023 como ponto
+    de partida, 2024, 2025 e 2026) e o total do ano. 2026 = ano completo projetado: realizado até o corte + estimativa dos outros meses."""
+    p = gap(1, "SEST")
+    d = R.contagem_mensal("SEST", list(selecao_inicial("SEST")), p["universo"])
+    t = d.pivot(index="mes", columns="ano", values="contagem").astype(float)
+    t.insert(1, PARTIDA, d[d.ano == 2023].set_index("mes").partida)
+    ano = t.sum()
+    ano[R.ANO_CORRENTE] = p["metas"].cpf0.sum()
+    t = _completar(t, ano[R.ANO_CORRENTE])
+    return {"meses": t, "corte": t.loc[:R.CORTE].sum(), "ano": ano, "unidades": len(p["universo"]),
+            "com_2023": int(p["serie"].contagem.xs(2023, level="ano").gt(0).sum())}
+
+
+@st.cache_data(show_spinner=False)
+def primeiro_estudo() -> pd.DataFrame:
+    """Primeiro estudo (diex/meta_cpfs): CPFs distintos no ano civil, 4 especialidades, mesmas unidades com meta. Linhas = meses, janeiro até o
+    corte e ano completo (2026 = estimativa oficial); colunas = anos desde 2023."""
+    ids = [int(i) for i in gap(1, "SEST")["universo"]]
+    oficial = pd.read_parquet(M.META_OFICIAL)
+    assert set(oficial.index) == set(ids), "unidades do primeiro estudo diferentes das deste painel"
+    m = duckdb.execute(f"""SELECT ano, mes, sum(entradas)::DOUBLE AS cpfs FROM '{M.MENSAL_OFICIAL}'
+                           WHERE ano >= 2023 AND id_unidade IN (SELECT unnest($ids)) AND NOT (ano = {R.ANO_CORRENTE} AND mes > {R.CORTE})
+                           GROUP BY ALL""", {"ids": ids}).df().pivot(index="mes", columns="ano", values="cpfs")
+    ate_corte, ano = m.loc[:R.CORTE].sum(), m.sum()
+    ano[R.ANO_CORRENTE] = oficial.cpf0.sum()
+    m = _completar(m, ano[R.ANO_CORRENTE])
+    return pd.concat([m.set_axis(MESES_PT), ate_corte.rename(f"{MESES_PT[0]} a {MESES_PT[R.CORTE - 1].lower()}").to_frame().T,
+                      ano.rename("Ano completo").to_frame().T])
 
 
 def historico(p: dict, entidade: str, unidade: int) -> tuple[pd.Series, str]:
-    """CPFs distintos por ano (unidade ou Nacional) e a ressalva do Nacional do SEST, cujos anos fechados somam todas as
-    unidades, como na apresentação."""
+    """Contagem por ano (unidade ou Nacional) e a ressalva do Nacional do SEST, cujos anos fechados somam todas as unidades."""
     h = serie_de(p, unidade)
     if not p["oficial"] or unidade in p["metas"].index:
         return h, ""
-    todas = serie_todas(entidade, selecao_inicial(entidade))
+    todas = serie_todas(entidade, selecao_inicial(entidade), p["ano"])
     return todas.where(todas.index < M.ANO_CORRENTE).fillna(h), (
-        f" Até 2025, todas as unidades, como na apresentação; 2026 e 2027, as {len(p['metas'])} com meta.")
+        f" Até 2025, todas as unidades; 2026 e 2027, as {len(p['metas'])} com meta.")
 
 
 def grupos_porte(m: pd.DataFrame) -> pd.DataFrame:
@@ -130,19 +184,19 @@ def nome_unidade(p: dict, unidade: int) -> str:
 
 
 @st.cache_data(show_spinner="Calculando as unidades maduras…")
-def maduras(entidade: str, selecao: tuple[str, ...] | None, medida: str) -> dict:
-    """Unidades com 5+ anos em 2023 e anos completos, em CPFs distintos (pessoa conta uma vez por unidade e ano):
+def maduras(entidade: str, selecao: tuple[str, ...] | None, medida: str, ano: bool = False) -> dict:
+    """Unidades com 5+ anos em 2023 e anos completos, na contagem da meta (SEST: 12 meses exatos; SENAT: CPFs distintos):
     série, total, variação de cada ano sobre o anterior e, por unidade, os dois resumos do período 2023→2026:
     média aritmética das três variações anuais e crescimento constante (média geométrica, (fim ÷ início)^(1/3) − 1)."""
     from common.metas import media_geometrica
-    s = M.maduras(entidade, None if selecao is None else list(selecao), medida)
+    s = M.maduras(entidade, None if selecao is None else list(selecao), medida, ano=ano)
     u = _rotular(M.unidades())
     total = s.groupby(level="ano")[M.METRICAS].sum()
-    cp = s.pessoas.unstack()
+    cp = s.contagem.unstack()
     cres = {m: s[m].unstack().pct_change(axis=1).drop(columns=2023) for m in M.METRICAS}
     anos = cp.columns[-1] - cp.columns[0]
     return {"serie": s, "total": total, "pessoas": cp, "cres": cres,
-            "aritmetica": cres["pessoas"].mean(axis=1),
+            "aritmetica": cres["contagem"].mean(axis=1),
             "geometrica": media_geometrica(cp[cp.columns[0]].where(cp[cp.columns[0]] > 0), cp[cp.columns[-1]], anos),
             "unidades": u.loc[u.index.intersection(cp.index, sort=False)], "n_total": len(u),
             "inaug_ate": M.ANO_MADURA - M.IDADE_MADURA}

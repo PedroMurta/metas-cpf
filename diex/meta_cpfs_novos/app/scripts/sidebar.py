@@ -1,6 +1,6 @@
 """Barra lateral no padrão da Matriz (cartões por seção, common.painel.casca.secao_lateral): Entidade, Filtros (unidade,
 conselho) e Cenário (parte do gap, Propostas 1 e 2). As abas só leem o objeto."""
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 import streamlit as st
 
@@ -11,12 +11,23 @@ from scripts import dados as D
 TODOS = "Todos"
 MESES = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"]
 
+VISOES = ["12 meses", "Ano completo"]
+
 
 @dataclass(frozen=True)
 class Filtros:
     entidade: str      # SEST ou SENAT
     unidade: int
     peso: int          # % do gap: 10, 15 ou 20
+    ano: bool = False  # visão: ano completo (True) ou 12 meses (False, o padrão); SENAT é sempre ano completo
+
+    @property
+    def doze(self) -> bool:
+        return self.entidade == "SEST" and not self.ano
+
+    @property
+    def chave(self) -> str:
+        return f"{self.entidade}_{'12m' if self.doze else 'ano'}"
 
     @property
     def medida(self) -> str:
@@ -54,3 +65,16 @@ def filtros() -> Filtros:
         st.caption(f":material/event_available: **{R.ANO_CORRENTE} é estimativa**: realizado até "
                    f"{MESES[R.CORTE - 1]} (SIGOP) e projeção para novembro e dezembro.")
     return Filtros(entidade, int(unidade), int(peso))
+
+
+def visao(f: Filtros) -> Filtros:
+    """Seletor único acima das abas (só SEST): muda todas as propostas juntas. O bloco existe nas duas entidades para as abas não
+    voltarem à primeira quando a entidade muda."""
+    with st.container():
+        if f.entidade != "SEST":
+            st.caption("SENAT: CPFs distintos no ano completo, até a decisão das lideranças sobre a regra de 12 meses.")
+            return replace(f, ano=True)
+        v = st.pills("Como contar as pessoas", VISOES, default=VISOES[0], key="visao",
+                     help="12 meses: 1ª vez na unidade, ou 12 meses ou mais desde o último atendimento nela. "
+                          "Ano completo: cada pessoa conta uma vez por unidade, de janeiro a dezembro.") or VISOES[0]
+    return replace(f, ano=v == VISOES[1])

@@ -3,7 +3,7 @@ regra passo a passo, exemplo de 1.000 pessoas, a conta real, a evolução e as m
 import pandas as pd
 import streamlit as st
 
-from abas.comum import assunto, baixar_excel, conta, cor, lx, mil, num, pct, rotulos_anos
+from abas.comum import assunto, baixar_excel, conta, contados, cor, lx, mil, num, pct, regra_contagem, rotulos_anos
 from common import painel as gt
 from common.painel.casca import nota
 from common.painel.classico import divergente
@@ -45,37 +45,38 @@ def render(f, n: int) -> None:
 
 # CPFs distintos ------------------------------------------------------------------------------------------------------
 def _cpfs(f, n: int, esp: str, campanhas: bool) -> None:
-    p = D.gap(n, f.entidade, campanhas)
+    p = D.gap(n, f.entidade, campanhas, f.ano)
     m, k = p["metas"], f.peso
-    chave = f"p{n}_{f.entidade}_{campanhas}"
+    chave = f"p{n}_{f.chave}_{campanhas}"
     uid = f.unidade
     tot, meta = m.cpf0.sum(), m[f"meta_pessoas_{k}"].sum()
 
     with gt.cartao(f"p{n}_resumo"):
         frase = "Esperado de 2027 + parte do gap" if n == 1 else "Esperado de 2027 + parte do gap, com todas as especialidades"
-        onde = (f"{esp}." if n == 1 else f"{esp}: cada pessoa conta uma vez na unidade, mesmo atendida em várias. Referência das unidades "
-                "com 5 anos ou mais em 2023, aplicada a todas.")
+        onde = (f"{esp}." if n == 1 else f"{esp}: a pessoa conta uma vez na unidade, mesmo que passe por várias. A referência vem das unidades "
+                "com 5 anos ou mais em 2023 e vale para todas.")
         gt.cabecalho(f"Proposta {n} · {f.entidade}", f"{frase}: {num(len(m))} unidades", f"{onde} Cenário de {k}% do gap.")
-        gt.kpis([("CPFs distintos 2026", mil(tot), "estimativa", ""),
+        gt.kpis([(f"{contados(f)} 2026", mil(tot), "estimativa", ""),
                  ("Esperado 2027", mil(m.sem_meta.sum()), f"{pct(m.sem_meta.sum() / tot - 1, 1, sinal=True)} · cada unidade no próprio ritmo", ""),
                  ("Meta 2027", mil(meta), f"{pct(meta / tot - 1, 1, sinal=True)} sobre a estimativa de 2026", ""),
-                 ("Meta abaixo de 2026", num((m[f"meta_pct_{k}"] < 0).sum()), "unidade(s)", "")])
+                 ("Menor meta", pct(m[f"meta_pct_{k}"].min(), 1, sinal=True), f"{num(m[f'piso_{k}'].sum())} unidades estão nesse mínimo", "")
+                 if p["nacional"] else ("Meta abaixo de 2026", num((m[f"meta_pct_{k}"] < 0).sum()), "unidade(s)", "")])
 
     with gt.cartao(f"p{n}_regra"):
-        _exemplo(f, n, m, p["oficial"], campanhas)
+        _exemplo(f, n, p, campanhas)
 
     with gt.cartao(f"p{n}_grupos"):
         g = D.grupos_porte(m)
         med = f.medida
-        extra = "" if n == 1 else " A referência usa só as unidades maduras do grupo (5 anos ou mais em 2023) e vale para todas."
-        gt.cabecalho("Grupos de porte", f"{num(len(m))} unidades em {len(g)} grupos: cada uma se compara com as de porte parecido",
-                     f"Faixas de mesmo tamanho pelo volume de {med} de 2026 (estimativa). O número de faixas vem da regra de Sturges; "
-                     f"grupo com menos de 5 unidades se junta ao vizinho.{extra}")
+        extra = "" if n == 1 else " A referência sai das unidades maduras do grupo (5 anos ou mais em 2023) e vale para todas."
+        gt.cabecalho("Grupos de porte", f"Cada unidade se compara com as de porte parecido: {num(len(m))} unidades em {len(g)} grupos",
+                     f"O porte é o volume de {med} em 2026 (estimativa), dividido em faixas de mesmo tamanho (regra de Sturges). "
+                     f"Grupo com menos de 5 unidades se junta ao vizinho.{extra}")
         tab = pd.DataFrame({"Grupo": g.index, "Unidades": g.unidades.map(num)})
         if n == 2:
             tab["Unidades maduras"] = g.maduras.map(num).values
         tab[f"{med.capitalize()} em 2026 (estimativa)"] = [f"{mil(a)} a {mil(b)}" for a, b in zip(g.de, g.ate)]
-        tab[f"Referência: {med} por CPF"] = g.referencia.map(lambda v: num(v, 1)).values
+        tab[f"Referência: {med} por pessoa atendida"] = g.referencia.map(lambda v: num(v, 1)).values
         tab["Acima da referência"] = g.acima.map(num).values
         gt.tabela(tab)
 
@@ -91,8 +92,8 @@ def _cpfs(f, n: int, esp: str, campanhas: bool) -> None:
         neg, _, pos = divergente(assunto(f.entidade))
         gt.cabecalho("Evolução", f"{D.nome_unidade(p, uid)}: meta de {pct(x[f'meta_pessoas_{k}'] / hist.iloc[-1] - 1, 1, sinal=True)} "
                                  f"em 2027 no cenário de {k}%",
-                     "CPFs distintos por ano; 2026 é estimativa. Os selos de 2027 comparam com 2026. Esperado: cada unidade "
-                     f"segue o próprio ritmo.{obs}")
+                     f"{contados(f)} por ano; 2026 é estimativa. Os selos de 2027 comparam com 2026. Esperado: cada unidade "
+                     f"continua no ritmo dela.{obs}")
         gt.grafico(f"evo_{chave}_{uid}", gt.evolucao(
             rot, vals, cor(f.entidade), textos=[mil(v) for v in vals], cores_var=(neg, pos), apagadas=[i, i + 1],
             comparar={j: i for j in range(i + 1, len(vals))}), 380)
@@ -100,28 +101,33 @@ def _cpfs(f, n: int, esp: str, campanhas: bool) -> None:
     with gt.cartao(f"p{n}_unidades"):
         u = p["unidades"]
         mm = m.loc[u.index]
-        gt.cabecalho("Metas por unidade", "Meta de 2027 em CPFs distintos nos três cenários",
+        gt.cabecalho("Metas por unidade", f"Meta de 2027 em {contados(f)} nos três cenários",
                      "Entre parênteses, quanto a meta representa sobre a estimativa de 2026")
-        df = pd.DataFrame({"Unidade": u.rotulo, "Conselho": u.conselho_curto, "Regra": mm.regra.map(D.REGRA),
+        df = pd.DataFrame({"Unidade": u.rotulo, "Conselho": u.conselho_curto, "Regra": D.rotulo_regra(mm, k),
                            "CPFs 2026 (estimativa)": mm.cpf0.map(num), "Esperado 2027": mm.sem_meta.map(num)})
         for w in D.PESOS:
             df[f"Meta {w}%"] = [f"{num(v)} ({pct(q, 1, sinal=True)})" for v, q in
                                 zip(mm[f"meta_pessoas_{w}"], mm[f"meta_pct_{w}"])]
         gt.tabela(df, destaque=("Unidade", D.nome_unidade(p, uid)) if uid != D.NACIONAL else None, texto=3, altura=480)
         bruto = pd.DataFrame({"unidade": u.rotulo, "conselho": u.conselho_curto, "regra": mm.regra.map(D.REGRA), "grupo": mm.grupo,
+                              "delta_nacional_minimo": p["nacional"],
                               "cpfs_2026_estimativa": mm.cpf0.round(0), "esperado_2027": mm.sem_meta, f"{f.medida}_por_cpf": mm.apc.round(2),
                               "referencia": mm.referencia.round(2), "ritmo": mm.ritmo.astype(float).round(4),
                               "gap": mm.distancia.astype(float).round(4)})
         for w in D.PESOS:
             bruto[f"meta_{w}"], bruto[f"meta_pct_{w}"] = mm[f"meta_pessoas_{w}"], mm[f"meta_pct_{w}"].round(4)
-        baixar_excel(bruto, f"meta_2027_proposta{n}_{f.entidade.lower()}.xlsx", f"xls_{chave}")
+            bruto[f"no_minimo_{w}"] = mm[f"piso_{w}"].map({True: "sim", False: "não"})
+        baixar_excel(bruto, f"meta_2027_proposta{n}_{f.chave.lower()}.xlsx", f"xls_{chave}")
 
-    nota("Unidade em queda segue o próprio crescimento e pode ficar com meta abaixo de 2026. Quem está na referência ou abaixo recebe a "
-         "mediana nacional, que pode ser menor que o esperado dela. 2026 é estimativa: realizado até outubro e "
-         "projeção para novembro e dezembro. As metas mudam quando o ano fechar.")
+    nota(regra_contagem(f) + " Já o gap usa todas as pessoas atendidas no ano. " + (
+         f"Nenhuma unidade cresce menos que o delta Nacional, {pct(p['nacional'], 2)}. " if p["nacional"] else
+         "Unidade em queda continua no ritmo dela e pode ficar com meta abaixo de 2026. ") + "Quem está na referência ou abaixo recebe a "
+         "mediana nacional, que pode ser menor que o esperado da unidade. 2026 é o realizado até outubro mais a "
+         "projeção de novembro e dezembro, e as metas mudam quando o ano fechar.")
 
 
-def _exemplo(f, n: int, m: pd.DataFrame, oficial: bool, campanhas: bool) -> None:
+def _exemplo(f, n: int, p: dict, campanhas: bool) -> None:
+    m, oficial, g = p["metas"], p["oficial"], p["nacional"]
     a, r = EXEMPLO[n, f.entidade]
     med, gap = f.medida, (a - r) / a
     historico = ("as quatro áreas e os 12 meses de 2023 a 2025, e as quatro áreas em 2026" if oficial
@@ -129,19 +135,19 @@ def _exemplo(f, n: int, m: pd.DataFrame, oficial: bool, campanhas: bool) -> None
     nac = m.mediana_nacional.iloc[0]
     onde = "" if n == 1 else (" em todas as especialidades" + (", com campanhas" if campanhas else
                                                               ", sem campanhas" if f.entidade == "SEST" else ""))
-    gt.cabecalho("Como a meta é calculada", "Exemplo: uma unidade com 1.000 pessoas em 2026 (estimativa)",
-                 "Números inventados e arredondados, só para mostrar a conta")
+    gt.cabecalho("Como a meta é calculada", "Exemplo: uma unidade com 1.000 pessoas contadas em 2026 (estimativa)",
+                 regra_contagem(f) + " Números inventados e arredondados.")
     c1, c2, c3 = st.columns(3, gap="medium")
     with c1, st.container(border=True):
-        st.markdown("**Passo 1. Esperado de 2027**  \nA unidade segue o próprio ritmo.")
+        st.markdown("**Passo 1. Esperado de 2027**  \nA unidade continua no ritmo dos últimos anos.")
         st.latex(r"751 \rightarrow 1.000 = 10\%\ \text{ao ano}")
         st.latex(r"\boxed{1.000 + 10\% = 1.100\ \text{pessoas}}")
-        st.caption("751 pessoas em 2023 e 1.000 em 2026 (estimativa). O crescimento constante é a média geométrica de 2023 a 2026.")
+        st.caption(f"751 {contados(f)} em 2023 e 1.000 em 2026 (estimativa). O ritmo é o crescimento médio por ano (média geométrica): 10% em cada um dos três anos leva de 751 a 1.000.")
     with c2, st.container(border=True):
-        st.markdown(f"**Passo 2. Gap do grupo**  \nQuanto a unidade passa da referência{onde}.")
+        st.markdown(f"**Passo 2. Gap do grupo**  \nQuanto a unidade faz acima da referência{onde}.")
         st.latex(rf"\text{{Unidade}} = {a} \quad \text{{Referência}} = {r}")
         st.latex(rf"\text{{Gap}} = \frac{{{a} - {r}}}{{{a}}} = {lx(100 * gap)}\%")
-        st.caption(f"Em {med} por pessoa. A referência é o P25 do grupo de porte: 1 em cada 4 unidades fica nesse valor ou abaixo"
+        st.caption(f"São {med} por pessoa atendida no ano. Na referência, 1 em cada 4 unidades do grupo de porte fica nesse valor ou abaixo (P25)"
                    + (". Na Proposta 2 ela sai das unidades com 5 anos ou mais em 2023." if n == 2 else "."))
     with c3, st.container(border=True):
         k = f.peso
@@ -155,11 +161,14 @@ def _exemplo(f, n: int, m: pd.DataFrame, oficial: bool, campanhas: bool) -> None
               destaque=("Cenário", f"{f.peso}% do gap"))
     c = m.regra.value_counts()
     st.markdown(
-        f"**Quem usa essa conta:** as {num(c.get('fórmula', 0))} unidades acima da referência e com histórico completo.\n\n"
-        f"**Na referência ou abaixo ({num(c.get('mediana', 0))} unidades):** não há gap. A meta é a mediana nacional, o crescimento da "
-        f"unidade do meio ({pct(nac, 1)}). Exemplo com 10%: 1.000 + 10% = 1.100.\n\n"
-        f"**Sem histórico completo ({num(c.get('própria', 0))} unidades):** a meta é o próprio esperado, a mediana dos crescimentos de "
-        f"2024 a 2026. Exemplo: 4%, 8% e 12%; o do meio é 8%; 1.000 + 8% = 1.080. Histórico completo: {historico}.")
+        f"**Acima da referência ({num(c.get('fórmula', 0))} unidades):** é a conta do exemplo, para quem tem histórico completo.\n\n"
+        f"**Na referência ou abaixo ({num(c.get('mediana', 0))} unidades):** não há gap. A meta é a mediana nacional: com os crescimentos em ordem, é o "
+        f"da unidade do meio ({pct(nac, 1)}). Exemplo com 10%: 1.000 + 10% = 1.100.\n\n"
+        f"**Sem histórico completo ({num(c.get('própria', 0))} unidades):** a meta é o esperado, calculado com o crescimento do meio entre os de "
+        f"2024, 2025 e 2026. Exemplo: com 4%, 8% e 12%, o do meio é 8%, e 1.000 + 8% = 1.080. Histórico completo é ter {historico}."
+        + (f"\n\n**Crescimento mínimo:** nenhuma unidade cresce menos que o delta Nacional, {pct(g, 2)} ao ano. É quanto as unidades com 5 anos ou mais "
+           f"em 2023 cresceram, juntas, em média por ano, de 2023 a 2026. Exemplo com mínimo de 7%: se a conta der 1.040, vale 1.000 + 7% = **1.070**. "
+           f"No cenário de {f.peso}%, {num(m[f'piso_{f.peso}'].sum())} unidades ficam no mínimo." if g else ""))
 
 
 def _conta_real(f, p: dict, uid: int) -> None:
@@ -167,19 +176,21 @@ def _conta_real(f, p: dict, uid: int) -> None:
     if uid == D.NACIONAL:
         tot, esp = m.cpf0.sum(), m.sem_meta.sum()
         gt.cabecalho("A conta real", "Nacional: a soma das metas das unidades", "Escolha uma unidade na barra lateral para ver a conta dela")
-        conta([("CPFs distintos 2026", f"{num(tot)} (estimativa)"), ("Esperado 2027", f"{num(esp)} ({pct(esp / tot - 1, 1, sinal=True)})"),
+        conta([(f"{contados(f)} 2026", f"{num(tot)} (estimativa)"), ("Esperado 2027", f"{num(esp)} ({pct(esp / tot - 1, 1, sinal=True)})"),
                *[(f"Meta {w}%", f"{num(m[f'meta_pessoas_{w}'].sum())} ({pct(m[f'meta_pessoas_{w}'].sum() / tot - 1, 1, sinal=True)}): "
                   f"{num(m[f'meta_pessoas_{w}'].sum() - esp)} a mais que o esperado") for w in D.PESOS]])
         return
     u = m.loc[uid]
     q, meta = u[f"meta_pct_{k}"], u[f"meta_pessoas_{k}"]
     gt.cabecalho("A conta real", f"{D.nome_unidade(p, uid)}: meta de {num(meta)} CPFs em 2027 ({pct(q, 1, sinal=True)})",
-                 f"{D.REGRA[u.regra]} · grupo {u.grupo} · cenário de {k}% do gap")
-    linhas = [("CPFs distintos 2026", f"{num(u.cpf0)} (estimativa)"),
+                 f"{D.rotulo_regra(m, k)[uid]} · grupo {u.grupo} · cenário de {k}% do gap")
+    linhas = [(f"{contados(f)} 2026", f"{num(u.cpf0)} (estimativa)"),
               ("Esperado 2027", f"{num(u.sem_meta)} ({pct(u.sem_meta / u.cpf0 - 1, 1, sinal=True)})"),
-              (f"{med.capitalize()} por pessoa", f"{num(u.producao)} ÷ {num(u.pessoas)} = {num(u.apc, 1)} (estimativa)"),
+              (f"{med.capitalize()} por pessoa atendida no ano", f"{num(u.producao)} ÷ {num(u.pessoas)} = {num(u.apc, 1)} (estimativa)"),
               ("Referência do grupo", num(u.referencia, 1))]
-    if u.regra == "fórmula":
+    if u[f"piso_{k}"]:
+        linhas.append(("Meta", f"crescimento mínimo, o delta Nacional: {num(u.cpf0)} + {pct(p['nacional'], 2)} = {num(meta)}"))
+    elif u.regra == "fórmula":
         linhas += [("Gap", f"({num(u.apc, 1)} − {num(u.referencia, 1)}) ÷ {num(u.apc, 1)} = {pct(u.distancia, 1)}"),
                    ("Acréscimo", f"{k}% × {pct(u.distancia, 1)} × {num(u.cpf0)} = {num(k / 100 * u.distancia * u.cpf0)}"),
                    ("Meta", f"{num(u.sem_meta)} + {num(meta - u.sem_meta)} = {num(meta)}")]

@@ -13,7 +13,8 @@ import pandas as pd
 
 AQUI = Path(__file__).parent
 DADOS = AQUI / "dados"
-GRUPOS, MASCARAS, PRODUCAO, RECORTES = (DADOS / f"{n}.parquet" for n in ("grupos", "mascaras", "producao", "recortes"))
+GRUPOS, MASCARAS, PRODUCAO, RECORTES, CONTAGEM, CONTAGEM_MES = (DADOS / f"{n}.parquet" for n in (
+    "grupos", "mascaras", "producao", "recortes", "contagem", "contagem_mensal"))
 CORTE = 10            # último mês fechado do ano corrente
 ANO_CORRENTE = 2026
 COMBINADA = "SEST + SENAT"   # entidade da Proposta 2: pessoa conta uma vez na unidade, seja atendida no SEST ou no SENAT
@@ -80,3 +81,23 @@ def novos_area(entidade: str, area: str, selecao: list[str] | None = None) -> pd
         WHERE entidade = '{entidade}' AND m_ano & {a} <> 0
         GROUP BY ALL ORDER BY id_unidade, ano
     """).df()
+
+
+def contagem(entidade: str, selecao: list[str] | None = None) -> pd.DataFrame | None:
+    """Unidade × ano: pessoas contadas pela regra de 12 meses exatos (contagem.py), no ano e até o CORTE. Só SEST; None = a
+    entidade segue em ano civil (SENAT, até a decisão das lideranças)."""
+    if entidade != "SEST":
+        return None
+    r = duckdb.sql(f"SELECT id_unidade, ano, contagem, contagem_corte FROM '{CONTAGEM}' WHERE chave = {bits(entidade, selecao)}").df()
+    assert len(r), f"contagem de 12 meses não preparada: {selecao}"
+    return r
+
+
+def contagem_mensal(entidade: str, selecao: list[str], ids) -> pd.DataFrame:
+    """Ano × mês: pessoas contadas (12 meses exatos) somando as unidades `ids`: contagem, com o histórico desde 2018, e partida, sem
+    nada antes de 2023 (as duas só diferem em 2023)."""
+    return duckdb.execute(f"""
+        SELECT ano, mes, sum(contagem)::BIGINT AS contagem, sum(partida)::BIGINT AS partida
+        FROM '{CONTAGEM_MES}' WHERE chave = $c AND id_unidade IN (SELECT unnest($ids))
+        GROUP BY ALL ORDER BY ano, mes
+    """, {"c": bits(entidade, selecao), "ids": [int(i) for i in ids]}).df()

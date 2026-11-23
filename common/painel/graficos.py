@@ -210,16 +210,16 @@ def saldo(rotulos, valores, modo: str = "barra") -> dict:
                        *([pulso(len(rot) - 1, ult, cor(ult), 8)] if vals else [])]}
 
 
-def barras_agrupadas(rotulos, series: list[tuple[str, list, str]]) -> dict:
+def barras_agrupadas(rotulos, series: list[tuple[str, list, str]], casas: int | None = None) -> dict:
     """Barras agrupadas por mês (nome, valores, cor): topo arredondado, degradê vertical com brilho, legenda no
-    topo, valores em R$ (mi/mil)."""
-    fmt = JsCode(BRL_JS)
+    topo, valores em R$ (mi/mil) ou, com `casas`, em números pt-BR. Valor vazio = sem barra."""
+    fmt = JsCode(BRL_JS) if casas is None else num_js(casas)
     return {**base(),
             "grid": {"left": 8, "right": 16, "top": 40, "bottom": 8, "containLabel": True},
             "legend": legenda(itemHeight=8),
             "tooltip": tooltip(trigger="axis", valueFormatter=fmt, axisPointer=_SOMBRA_EIXO),
             "xAxis": eixo_categoria(rotulos), "yAxis": eixo_valor(fmt),
-            "series": [{"type": "bar", "name": nome, "data": [round(float(v), 2) for v in valores],
+            "series": [{"type": "bar", "name": nome, "data": [finito(v) for v in valores],
                         "barMaxWidth": 16, "barGap": "20%",
                         "itemStyle": {"borderRadius": [6, 6, 0, 0], "shadowBlur": 8, "shadowColor": rgba(cor, .5),
                                       "color": {"type": "linear", "x": 0, "y": 0, "x2": 0, "y2": 1, "colorStops": [

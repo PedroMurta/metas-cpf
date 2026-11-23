@@ -3,7 +3,7 @@ gráfico e por unidade."""
 import pandas as pd
 import streamlit as st
 
-from abas.comum import assunto, baixar_excel, cor, mil, num, pct, rotulos_anos
+from abas.comum import assunto, baixar_excel, contados, cor, mil, num, pct, rotulos_anos
 from common import painel as gt
 from common.painel.casca import nota
 from common.painel.classico import divergente
@@ -12,7 +12,7 @@ from scripts import dados as D
 
 def _base(f, escopo: int) -> tuple[dict, pd.DataFrame, list[str]]:
     """(proposta de gap da base, estimativa × esperado × metas por unidade, nomes das propostas)."""
-    p, m3 = D.gap(escopo, f.entidade), D.mercado(f.entidade, escopo)["metas"]
+    p, m3 = D.gap(escopo, f.entidade, ano=f.ano), D.mercado(f.entidade, escopo, f.ano)["metas"]
     m, nomes = p["metas"], [f"Proposta {escopo}", "Proposta 3"]
     return p, pd.DataFrame({"base": m.cpf0, "esperado": m.sem_meta, nomes[0]: m[f"meta_pessoas_{f.peso}"],
                             nomes[1]: m3.meta}).astype(float), nomes
@@ -20,13 +20,14 @@ def _base(f, escopo: int) -> tuple[dict, pd.DataFrame, list[str]]:
 
 def render(f) -> None:
     k, rotulos = f.peso, D.ESCOPO[f.entidade]
-    regra = {"Proposta 1": f"Esperado + {k}% do gap", "Proposta 2": f"Esperado + {k}% do gap", "Proposta 3": "Esperado + mercado"}
+    minimo = ", com mínimo" if f.entidade == "SEST" else ""
+    regra = {"Proposta 1": f"Esperado + {k}% do gap{minimo}", "Proposta 2": f"Esperado + {k}% do gap{minimo}", "Proposta 3": "Delta Nacional com esforço ou esperado, o maior" if f.entidade == "SEST" else "Esperado + mercado"}
 
     with gt.cartao("comp_nacional"):
         bases = {e: _base(f, e) for e in (1, 2)}
         gt.cabecalho("Nacional", f"Esperado de 2027: {mil(bases[1][1].esperado.sum())} com {rotulos[1].lower()} e "
                                  f"{mil(bases[2][1].esperado.sum())} com {rotulos[2].lower()}",
-                     f"{f.entidade} · CPFs distintos · 2026 é estimativa · Propostas 1 e 2 no cenário de {k}%")
+                     f"{f.entidade} · {contados(f)} · 2026 é estimativa · Propostas 1 e 2 no cenário de {k}%")
         linhas = []
         for e, (_, t, nomes) in bases.items():
             s = t.sum()
@@ -47,8 +48,8 @@ def render(f) -> None:
         neg, _, pos = divergente(assunto(f.entidade))
         gt.cabecalho("Evolução", f"{D.nome_unidade(p, uid)}: esperado de {pct(x.esperado / x.base - 1, 1, sinal=True)} em 2027; "
                                  + "; ".join(f"{n}, {pct(x[n] / x.base - 1, 1, sinal=True)}" for n in nomes),
-                     f"{rotulos[escopo]}. CPFs distintos por ano; 2026 é estimativa. Os selos de 2027 comparam com 2026.{obs}")
-        gt.grafico(f"evo_comp_{f.entidade}_{escopo}_{k}_{uid}", gt.evolucao(
+                     f"{rotulos[escopo]}. {contados(f)} por ano; 2026 é estimativa. Os selos de 2027 comparam com 2026.{obs}")
+        gt.grafico(f"evo_comp_{f.chave}_{escopo}_{k}_{uid}", gt.evolucao(
             [*rotulos_anos(hist.index), "2027\nesperado", *[f"2027\n{n}" for n in nomes]], vals, cor(f.entidade),
             textos=[mil(v) for v in vals], cores_var=(neg, pos), apagadas=[i, i + 1],
             comparar={j: i for j in range(i + 1, len(vals))}), 380)
@@ -65,8 +66,8 @@ def render(f) -> None:
             df[n] = [f"{num(v)} ({pct(v / b - 1, 1, sinal=True)})" for v, b in zip(tt[n], tt.base)]
             bruto[n.lower().replace(" ", "")], bruto[f"{n.lower().replace(' ', '')}_pct"] = tt[n], (tt[n] / tt.base - 1).round(4)
         gt.tabela(df, destaque=("Unidade", D.nome_unidade(p, uid)) if uid != D.NACIONAL else None, texto=1, altura=520)
-        baixar_excel(bruto, f"meta_2027_comparacao_{f.entidade.lower()}_{'todas' if escopo == 2 else 'inicial'}.xlsx", "xls_comparacao")
+        baixar_excel(bruto, f"meta_2027_comparacao_{f.chave.lower()}_{'todas' if escopo == 2 else 'inicial'}.xlsx", "xls_comparacao")
 
-    nota("Os totais de bases diferentes não se comparam direto: com todas as especialidades entram mais pessoas. Compare os aumentos. "
-         "Nas Propostas 1 e 2, quem está na referência ou abaixo recebe a mediana nacional, que pode ser menor que o esperado da unidade."
-         + (" Na base com todas, as campanhas ficam fora." if f.entidade == "SEST" else ""))
+    nota("Com todas as especialidades entram mais pessoas, por isso compare os aumentos e não os totais. "
+         "Nas Propostas 1 e 2, quem está na referência ou abaixo recebe a mediana nacional, que pode ser menor que o esperado dela."
+         + (" Nenhuma unidade cresce menos que o delta Nacional. Na base com todas, as campanhas ficam fora." if f.entidade == "SEST" else ""))

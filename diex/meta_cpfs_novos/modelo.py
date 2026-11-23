@@ -1,18 +1,18 @@
 """Propostas de meta 2027: um passo por função, sem I/O de extração (lê só os parquets de dados/ via recortes.py).
 
-Passos: 1 base do recorte → 2 estimativa do ano corrente → 3 universo → 4 regra. As três propostas (23/11), em CPFs
-distintos, nas mesmas unidades, partem da estimativa de 2026 e do ESPERADO de 2027 por unidade (o "sem meta" da apresentação):
+Passos: 1 base do recorte → 2 estimativa do ano corrente → 3 universo → 4 regra. Contagem (23/11): SEST em 12 meses exatos,
+SENAT em CPFs distintos no ano civil; gap e penetração usam os atendidos no ano nos dois. As três propostas, nas mesmas unidades, partem da estimativa de 2026 e do ESPERADO de 2027 por unidade (o "sem meta" da apresentação):
   1. seleção inicial (SEST: 4 áreas, a meta da apresentação; SENAT: presencial): ritmo + parte do gap (10/15/20%);
   2. todas as especialidades (SEST sem campanhas), com base e esperado próprios: mesma regra, com a referência do grupo de porte
      calculada nas unidades maduras (5 anos em 2023) e aplicada a todas;
-  3. esperado (da seleção inicial ou de todas) + fator de mercado: base + delta × (1 + esforço), delta = esperado − base.
+  3. fator de mercado: base + delta × (1 + esforço); SEST: delta = crescimento Nacional × base; SENAT: delta = esperado − base.
 SENAT nas propostas 1 e 2: também meta em horas-aula (regra_horas).
 """
 import duckdb
 import numpy as np
 import pandas as pd
 
-from recortes import ANO_CORRENTE, COMBINADA, DADOS, producao, recorte
+from recortes import ANO_CORRENTE, COMBINADA, DADOS, contagem, producao, recorte
 
 ANOS_FRACAO = (2023, 2024, 2025)   # anos fechados que dão a fração do ano alcançada até o CORTE
 PESO_PROPRIA = 0.5                 # peso da fração da própria unidade na projeção (o resto é a nacional)
@@ -20,10 +20,11 @@ IDADE_P1 = (2, ANO_CORRENTE)       # (anos mínimos desde a inauguração, ano e
 IDADE_MADURA, ANO_MADURA = 5, 2023 # unidades maduras (inauguradas até 2018): referência da Proposta 2 e aba Análise
 ANO_META = ANO_CORRENTE + 1
 MEDIDAS = {"atendimentos": "Atendimentos", "horas": "Horas"}   # horas só fazem sentido no SENAT
-METRICAS = ["pessoas", "novos", "producao"]
+METRICAS = ["pessoas", "novos", "contagem", "producao"]   # contagem: o que a meta conta (SEST: 12 meses exatos; SENAT: = pessoas)
 ID_ASSIS = {196: 141}   # o planejamento usa o id 196 (desativado) para Assis/SP; o ativo no SIGOP é 141 (meta_cpfs/gerar.py)
 AREAS_META = {"Odontologia", "Fisioterapia", "Psicologia", "Nutrição"}
 META_OFICIAL = DADOS.parents[1] / "meta_cpfs" / "dados" / "meta_cpf_2027.parquet"
+MENSAL_OFICIAL = META_OFICIAL.with_name("agenda_mensal.parquet")   # primeiro estudo: unidade × mês, pessoa no mês do 1º atendimento do ano
 
 
 def unidades() -> pd.DataFrame:
@@ -32,13 +33,17 @@ def unidades() -> pd.DataFrame:
 
 
 # Passo 1 · base do recorte ------------------------------------------------------------------------------------------
-def base(entidade: str, selecao: list[str] | None = None, medida: str = "atendimentos") -> pd.DataFrame:
-    """Unidade × ano: pessoas, novos e produção (atendimentos ou horas), no ano e até o CORTE."""
+def base(entidade: str, selecao: list[str] | None = None, medida: str = "atendimentos", ano: bool = False) -> pd.DataFrame:
+    """Unidade × ano: pessoas, novos, contagem e produção (atendimentos ou horas), no ano e até o CORTE. `ano`: visão do ano completo, em
+    que a contagem são os CPFs distintos no ano civil também no SEST (no SENAT, sempre)."""
     r = recorte(entidade, selecao)
     p = producao(entidade, selecao)
     p = p.rename(columns={medida: "producao", f"{medida}_corte": "producao_corte"})[
         ["id_unidade", "ano", "producao", "producao_corte"]]
-    b = r.merge(p, on=["id_unidade", "ano"], how="outer").fillna(0)
+    b = r.merge(p, on=["id_unidade", "ano"], how="outer")
+    c = None if ano else contagem(entidade, selecao)
+    b = b.merge(c, on=["id_unidade", "ano"], how="left") if c is not None else b.assign(contagem=b.pessoas, contagem_corte=b.pessoas_corte)
+    b = b.fillna(0)
     return b.set_index(["id_unidade", "ano"]).sort_index()
 
 
@@ -99,10 +104,10 @@ def universo(serie: pd.DataFrame, u: pd.DataFrame, meta: pd.Series, ano: int = A
 
 
 def calcular(entidade: str, selecao: list[str] | None = None, medida: str = "atendimentos",
-             idade: tuple[int, int] = IDADE_P1) -> dict:
+             idade: tuple[int, int] = IDADE_P1, ano: bool = False) -> dict:
     """Passos 1–3 para um recorte. Devolve a série (com o ano corrente projetado) e o universo."""
     u = unidades()
-    b = base(entidade, selecao, medida)
+    b = base(entidade, selecao, medida, ano)
     b = b[b.index.get_level_values("id_unidade").isin(u.index)]
     serie = projetar(b, u.ano_inauguracao)
     return {"serie": serie, "universo": universo(serie, u, meta_pactuada(entidade), idade=idade), "unidades": u}
@@ -167,13 +172,43 @@ def historico_completo(entidade: str, selecao: list[str] | None, serie: pd.DataF
     return (doze.reindex(novos.index, fill_value=False) & novos).rename("com_meta")
 
 
-def regra(entidade: str, selecao: list[str] | None = None, medida: str = "atendimentos", metrica: str = "pessoas",
-          idade: tuple[int, int] = IDADE_P1, ref_maduras: bool = False) -> dict:
+def _metas(b: pd.DataFrame, cp: pd.DataFrame) -> pd.DataFrame:
+    """Regra do meta_cpfs e cenários sobre `b` (cpf0, pessoas, producao, apc, grupo, referencia, com_meta) e a contagem por ano `cp`."""
+    from common import metas as MT
+    cp = cp.where(cp > 0)                        # ano sem contagem → crescimento vazio, não infinito
+    res = b.join(MT.meta(b[b.com_meta], cp, PESOS[0], JANELA[0], ANO_CORRENTE))
+    res["acima"] = res.acima.astype("boolean")
+    res = MT.sem_historico(res, cp, ANO_CORRENTE)
+    vazio = res.meta_pct.isna()                  # sem histórico e sem crescimentos próprios → mediana nacional
+    res.loc[vazio, "meta_pct"] = res.mediana_nacional[vazio]
+    res.loc[vazio, "regra"] = "mediana"
+    res.loc[vazio, "meta_pessoas"] = np.ceil(res.cpf0[vazio] * (1 + res.meta_pct[vazio]))
+    return res.join(MT.cenarios(res, PESOS))
+
+
+def com_piso(m: pd.DataFrame, g: float | None) -> pd.DataFrame:
+    """Crescimento mínimo das Propostas 1 e 2 (SEST, 23/11): nenhuma meta abaixo de base × (1 + delta Nacional). `piso_{k}` marca as
+    unidades em que o mínimo vale no cenário de k%. Sem delta positivo (SENAT) não há piso."""
+    ks = [round(100 * w) for w in PESOS]
+    if g is None or g <= 0:
+        return m.assign(**{f"piso_{k}": False for k in ks})
+    m, minimo = m.copy(), np.ceil(m.cpf0 * (1 + g))
+    for k in ks:
+        m[f"piso_{k}"] = m[f"meta_pct_{k}"] < g
+        m[f"meta_pessoas_{k}"] = np.maximum(m[f"meta_pessoas_{k}"], minimo)
+        m[f"meta_pct_{k}"] = m[f"meta_pct_{k}"].clip(lower=g)
+    m["meta_pct"], m["meta_pessoas"] = m[f"meta_pct_{ks[0]}"], m[f"meta_pessoas_{ks[0]}"]
+    return m
+
+
+def regra(entidade: str, selecao: list[str] | None = None, medida: str = "atendimentos", metrica: str = "contagem",
+          idade: tuple[int, int] = IDADE_P1, ref_maduras: bool = False, ano: bool = False) -> dict:
     """Meta por unidade do universo, com os cenários de PESOS. Devolve série, universo e o resultado.
-    metrica: "pessoas" (CPFs distintos, a regra original do meta_cpfs) ou "novos" (CPFs novos; fora do painel desde 23/11).
+    metrica: o que a meta conta. "contagem" = regra de 12 meses exatos no SEST e CPFs distintos no SENAT (23/11); "pessoas" = CPFs
+    distintos no ano civil (a regra original). `ano`: visão do ano completo (contagem = CPFs distintos no ano). O gap usa sempre a produção por pessoa atendida no ano.
     ref_maduras: P25 do grupo só com as unidades maduras (vale para todas do grupo; grupo sem madura usa o P25 do grupo)."""
     from common import metas as MT
-    r = calcular(entidade, selecao, medida, idade)
+    r = calcular(entidade, selecao, medida, idade, ano)
     uni = r["universo"].index[r["universo"].entra]
     s = r["serie"][r["serie"].index.get_level_values("id_unidade").isin(uni)]
     atual = s.xs(ANO_CORRENTE, level="ano")
@@ -185,16 +220,7 @@ def regra(entidade: str, selecao: list[str] | None = None, medida: str = "atendi
     if ref_maduras:
         b["referencia"] = b.grupo.map(b[b.madura].groupby("grupo").apc.quantile(0.25)).fillna(b.referencia)
     b["com_meta"] = historico_completo(entidade, selecao, s).reindex(b.index, fill_value=False)
-    cp = s[metrica].unstack()
-    cp = cp.where(cp > 0)                        # sem novos num ano → crescimento vazio, não infinito
-    res = b.join(MT.meta(b[b.com_meta], cp, PESOS[0], JANELA[0], ANO_CORRENTE))
-    res["acima"] = res.acima.astype("boolean")
-    res = MT.sem_historico(res, cp, ANO_CORRENTE)
-    vazio = res.meta_pct.isna()                  # sem histórico e sem crescimentos próprios → mediana nacional
-    res.loc[vazio, "meta_pct"] = res.mediana_nacional[vazio]
-    res.loc[vazio, "regra"] = "mediana"
-    res.loc[vazio, "meta_pessoas"] = np.ceil(res.cpf0[vazio] * (1 + res.meta_pct[vazio]))
-    res = res.join(MT.cenarios(res, PESOS))
+    res = _metas(b, s[metrica].unstack())
     return {"serie": s, "universo": uni, "unidades": r["unidades"], "metas": res}
 
 
@@ -207,23 +233,28 @@ def serie_oficial(s: pd.DataFrame, of: pd.DataFrame) -> pd.DataFrame:
     return s
 
 
-def proposta1(entidade: str, selecao: list[str], medida: str) -> dict:
-    """Meta da apresentação em CPFs distintos. No SEST com as 4 áreas, a própria meta oficial; senão, a mesma regra."""
+def proposta1(entidade: str, selecao: list[str], medida: str, ano: bool = False) -> dict:
+    """Seleção inicial. No SEST com as 4 áreas, grupos, referências, histórico completo e gap são os da meta oficial (pessoas
+    atendidas no ano); a contagem que cresce é a de 12 meses exatos ou, com `ano`, a da própria meta oficial."""
     of = oficial(entidade, selecao)
     if of is None:
-        return regra(entidade, selecao, medida) | {"oficial": False}
-    r = calcular(entidade, selecao, medida)
+        return regra(entidade, selecao, medida, ano=ano) | {"oficial": False}
+    r = calcular(entidade, selecao, medida, ano=ano)
     uni = r["universo"].index[r["universo"].entra]
     assert set(uni) == set(of.index), "universo difere da meta oficial"
     s = r["serie"][r["serie"].index.get_level_values("id_unidade").isin(uni)]
-    m = of.rename(columns={"at0": "producao"}).assign(pessoas=of.cpf0)
-    return {"serie": serie_oficial(s, of), "universo": uni, "unidades": r["unidades"], "metas": m.loc[uni], "oficial": True}
+    s = serie_oficial(s, of)
+    if ano:
+        s["contagem"] = s.pessoas                # 2026 = estimativa oficial, a da apresentação
+    b = of.loc[uni, ["apc", "grupo", "referencia"]].assign(pessoas=of.cpf0, producao=of.at0, com_meta=of.com_meta.astype(bool),
+                                                           cpf0=s.contagem.xs(ANO_CORRENTE, level="ano"))
+    return {"serie": s, "universo": uni, "unidades": r["unidades"], "metas": _metas(b, s.contagem.unstack()), "oficial": True}
 
 
-def proposta2(entidade: str, todas: list[str] | None, medida: str) -> dict:
+def proposta2(entidade: str, todas: list[str] | None, medida: str, ano: bool = False) -> dict:
     """Mesma regra da Proposta 1 com todas as especialidades (pessoa conta uma vez na unidade, mesmo em várias), base e esperado
     próprios e referência do grupo de porte calculada nas unidades maduras."""
-    return regra(entidade, todas, medida, ref_maduras=True) | {"oficial": False}
+    return regra(entidade, todas, medida, ref_maduras=True, ano=ano) | {"oficial": False}
 
 
 def regra_horas(entidade: str, selecao: list[str] | None, idade: tuple[int, int]) -> dict:
@@ -253,11 +284,11 @@ def regra_horas(entidade: str, selecao: list[str] | None, idade: tuple[int, int]
 
 
 def maduras(entidade: str, selecao: list[str] | None = None, medida: str = "atendimentos",
-            idade: int = IDADE_MADURA, ano_ref: int = ANO_MADURA) -> pd.DataFrame:
+            idade: int = IDADE_MADURA, ano_ref: int = ANO_MADURA, ano: bool = False) -> pd.DataFrame:
     """Unidade × ano (2023–2026; 2026 projetado): pessoas, novos e produção das unidades com `idade`+ anos em `ano_ref`
     e anos completos no recorte (12 meses de produção em cada ano fechado de 2023 a 2025). Teste pedido em 19/11:
     crescimento sem o efeito de unidade nova ou de área que abriu no meio do período."""
-    r = calcular(entidade, selecao, medida)
+    r = calcular(entidade, selecao, medida, ano=ano)
     u, s = r["unidades"], r["serie"]
     velhas = u.index[(ano_ref - u.ano_inauguracao) >= idade]
     completas = historico_completo(entidade, selecao, s)
@@ -266,9 +297,9 @@ def maduras(entidade: str, selecao: list[str] | None = None, medida: str = "aten
 
 
 # Proposta 3 · fator de mercado (19/11; refeita em 23/11) --------------------------------------------------------------
-# Meta = base + delta × (1 + FE), por unidade. Base = CPFs distintos do ano corrente (estimativa); delta = esperado de 2027 −
-# base. Delta negativo não leva esforço: a unidade fica no próprio crescimento. FE pela faixa do fator de mercado
-# FM = 0,6 × percentil do mercado (planilha) + 0,4 × percentil da lacuna (1 − penetração; penetração = base ÷ mercado).
+# Meta = base + delta × (1 + FE), por unidade. Base = contagem do ano corrente (estimativa); delta = crescimento
+# Nacional × base no SEST (23/11; a meta é a maior entre essa conta e o esperado da unidade) e esperado − base no SENAT. Delta negativo não leva esforço: a unidade fica no próprio crescimento. FE pela faixa do fator de mercado
+# FM = 0,6 × percentil do mercado (planilha) + 0,4 × percentil da lacuna (1 − penetração; penetração = atendidos no ano ÷ mercado).
 MERCADO_COLUNA = {"SEST": "saude", "SENAT": "educacao"}   # Saúde B2C (SEST) e Educação B2B (SENAT; título errado na planilha)
 PESO_MERCADO, PESO_LACUNA = 0.6, 0.4
 FAIXAS_FM = (0.25, 0.50, 0.75)                             # FM até 0,25 → 5%; até 0,50 → 10%; até 0,75 → 15%; acima → 20%
@@ -282,11 +313,11 @@ def mercado() -> pd.DataFrame:
 
 
 def crescimento_nacional(entidade: str, selecao: list[str] | None = None, medida: str = "atendimentos",
-                         coluna: str = "pessoas") -> float:
+                         coluna: str = "pessoas", ano: bool = False) -> float:
     """Crescimento constante Nacional 2023→2026 nas unidades maduras do recorte (aba Análise), em CPFs distintos ou,
     com coluna="producao", em horas/atendimentos."""
     from common.metas import media_geometrica
-    t = maduras(entidade, selecao, medida)[coluna].groupby(level="ano").sum()
+    t = maduras(entidade, selecao, medida, ano=ano)[coluna].groupby(level="ano").sum()
     return float(media_geometrica(t.iloc[0], t.iloc[-1], t.index[-1] - t.index[0]))
 
 
@@ -302,26 +333,32 @@ def oficial(entidade: str, selecao: list[str] | None) -> pd.DataFrame | None:
     return duckdb.sql(f"SELECT * FROM '{META_OFICIAL}'").df().set_index("id_unidade")
 
 
-def proposta3(entidade: str, p: dict) -> dict:
-    """Esperado de `p` (Proposta 1 ou 2) + fator de mercado, por unidade."""
+def proposta3(entidade: str, p: dict, nacional: float | None = None) -> dict:
+    """Fator de mercado sobre a base de `p` (Proposta 1 ou 2), por unidade. Com `nacional` (SEST, 23/11), o delta é o crescimento
+    Nacional × base, igual para todas: meta = o maior entre base × (1 + nacional × (1 + FE)) e o esperado da unidade (`no_esperado`). Sem ele
+    (SENAT), o delta é o esperado da própria unidade − base, e delta negativo não leva esforço."""
     m1 = p["metas"]
     m = pd.DataFrame({"base": m1.cpf0, "esperado": m1.sem_meta}).astype(float)
-    m["delta"] = m.esperado - m.base
+    m["delta"] = m.esperado - m.base if nacional is None else m.base * nacional
+    m["partida"] = m.base + m.delta                                    # SENAT: o próprio esperado; SEST: base + delta Nacional
     mk, coluna = mercado().reindex(m.index), MERCADO_COLUNA[entidade]
     m["mercado"] = mk[coluna]
-    m["penetracao"] = m.base / m.mercado.where(m.mercado > 0)
+    m["pessoas"] = m1.pessoas.astype(float)                            # atendidos no ano: gap e penetração não mudam com a contagem
+    m["penetracao"] = m.pessoas / m.mercado.where(m.mercado > 0)
     m["p_mercado"] = mk[f"percentil_{coluna}"]                         # o da planilha, entre as 184 unidades dela
     m["p_lacuna"] = percentil(1 - m.penetracao).fillna(0)             # sem mercado → sem lacuna
     m["fm"] = PESO_MERCADO * m.p_mercado.fillna(0) + PESO_LACUNA * m.p_lacuna
     faixa = np.searchsorted(FAIXAS_FM, m.fm.to_numpy(), side="left")
     m["fe"], m["potencial"] = np.take(ESFORCOS, faixa), np.take(POTENCIAL, faixa)
-    m["meta"] = np.ceil(m.esperado + m.delta.clip(lower=0) * m.fe)    # = base + delta × (1 + FE)
+    m["meta_delta"] = np.ceil(m.partida + m.delta.clip(lower=0) * m.fe)    # = base + delta × (1 + FE)
+    m["meta"] = m.meta_delta if nacional is None else np.maximum(m.meta_delta, np.ceil(m.esperado))
+    m["no_esperado"] = m.meta > m.meta_delta
     m["meta_pct"] = m.meta / m.base - 1
-    return p | {"metas": m}
+    return p | {"metas": m, "nacional": nacional}
 
 
 def resumo_mercado(m: pd.DataFrame) -> dict:
     pct = m.meta_pct
-    return {"base": m.base.sum(), "esperado": m.esperado.sum(), "meta": m.meta.sum(),
+    return {"base": m.base.sum(), "esperado": m.esperado.sum(), "partida": m.partida.sum(), "minimo": pct.min(), "no_esperado": int(m.no_esperado.sum()), "meta_delta": m.meta_delta.sum(), "meta": m.meta.sum(),
             "nacional_pct": m.meta.sum() / m.base.sum() - 1, "p10": pct.quantile(0.10), "p90": pct.quantile(0.90),
             "negativas": int((pct < 0).sum()), "sem_esforco": int((m.delta <= 0).sum())}
