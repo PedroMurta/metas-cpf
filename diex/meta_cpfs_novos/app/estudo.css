@@ -16,3 +16,24 @@
 /* Fórmulas: folga para a fração não ser cortada em cima */
 .stLatex .katex-display { padding: 6px 0; margin: 4px 0; overflow: visible; }
 .stLatex, .stLatex > div, [data-testid="stMarkdownContainer"] .katex-display { overflow: visible !important; }
+
+/* Introdução: quadros ilustrados (desenho em cima, texto embaixo) */
+.streamlit-ilus { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(250px, 100%), 1fr)); gap: 14px; margin: 6px 0; }
+.streamlit-ilus-quadro { padding: 16px; border: 1px solid rgba(15,37,64,.12); border-radius: 14px; background: rgba(255,255,255,.6); }
+.streamlit-ilus-quadro > b { display: block; font: 700 15px/1.35 var(--font-body); color: #0f2540; }
+.streamlit-ilus-quadro > img { display: block; width: 100%; max-width: 340px; height: auto; margin: 8px auto; }
+.streamlit-ilus-quadro > p { margin: 0; font: 400 14px/1.5 var(--font-body); color: #5a6a7e; }
+.streamlit-ilus-pares { grid-template-columns: repeat(auto-fit, minmax(min(380px, 100%), 1fr)); }
+
+/* Proposta: tabelas com grade dos quadrados da conta */
+.streamlit-grade { overflow-x: auto; border: 1px solid rgba(15,37,64,.16); border-radius: 16px; background: #fff; }
+.streamlit-grade table { width: 100%; border-collapse: collapse; font: 400 14px/1.45 var(--font-body); color: #0f2540; }
+.streamlit-grade th, .streamlit-grade td { padding: 9px 14px; text-align: left; vertical-align: top; border: 0 solid rgba(15,37,64,.12); border-bottom-width: 1px; }
+.streamlit-grade th + th, .streamlit-grade td + td { border-left-width: 1px; }
+.streamlit-grade th { font-weight: 700; }
+.streamlit-grade tbody tr:last-child td { border-bottom-width: 0; }
+.streamlit-grade-forte td { font-weight: 700; }
+@media (max-width: 640px) {
+    .streamlit-grade th, .streamlit-grade td { padding: 7px 5px; font-size: 12px; }
+    [data-testid="stMarkdownContainer"] .katex-display .katex { font-size: .98em; }
+}

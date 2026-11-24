@@ -13,17 +13,17 @@ for pasta in (APP.parents[2], APP.parent, APP):   # raiz (common), projeto (mode
 
 import streamlit as st  # noqa: E402
 
-from abas import analise, comparacao, gap, introducao, mercado  # noqa: E402
+from abas import analise, comparacao, introducao, mercado  # noqa: E402
 from common.painel.casca import aplicar_tema, cabecalho, rodape  # noqa: E402
 from scripts.sidebar import filtros, visao  # noqa: E402
 
-st.set_page_config(page_title="Propostas de meta 2027", layout="wide")
+st.set_page_config(page_title="Meta de CPFs novos", layout="wide")
 aplicar_tema(APP / "estudo.css", filtros=True)   # casca + barra lateral no padrão da Matriz (common/painel)
-cabecalho("Propostas de meta 2027")
+cabecalho("Meta de CPFs novos")
 
 f = visao(filtros())
-ABAS = {"Introdução": introducao.render, "Proposta 1": lambda f: gap.render(f, 1), "Proposta 2": lambda f: gap.render(f, 2),
-        "Proposta 3": mercado.render, "Comparação": comparacao.render, "Análise": analise.render}   # "Mês a mês" (abas/mensal.py) oculta a pedido, 23/11
+ABAS = {"Introdução": introducao.render, "Proposta": mercado.render, "Comparação": comparacao.render,
+        "Análise": analise.render}   # ocultas a pedido: "Mês a mês" (abas/mensal.py, 23/11) e Propostas 1 e 2 (abas/gap.py, 24/11)
 for aba, render in zip(st.tabs(list(ABAS)), ABAS.values()):
     with aba:
         render(f)

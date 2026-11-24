@@ -5,7 +5,7 @@ import streamlit as st
 
 from common import painel as gt
 from common.painel.classico import ASSUNTOS, CONTEXTO
-from recortes import ANO_CORRENTE
+from recortes import ANO_CORRENTE, COMBINADA
 
 CINZA = CONTEXTO
 
@@ -20,13 +20,20 @@ def cor(entidade: str) -> str:
 
 
 def contados(f) -> str:
-    """Nome do que a meta conta na visão escolhida: contagem de 12 meses exatos (SEST) ou CPFs distintos no ano completo."""
-    return "CPFs contados" if f.doze else "CPFs distintos"
+    """Nome do que a meta conta na visão escolhida: contagem de 12 meses exatos ou CPFs distintos no ano civil."""
+    return "CPFs novos" if f.doze else "CPFs distintos"
 
 
 def regra_contagem(f) -> str:
-    return ("CPFs contados: a pessoa conta na 1ª vez na unidade ou quando volta depois de 12 meses ou mais." if f.doze else
-            "CPFs distintos: cada pessoa conta uma vez por unidade e por ano, de janeiro a dezembro.")
+    juntos = " Quem é atendido no SEST e no SENAT da mesma unidade conta uma vez." if f.entidade == COMBINADA else ""
+    return ("CPFs novos: a pessoa conta na 1ª vez na unidade ou quando volta depois de 12 meses ou mais." if f.doze else
+            "CPFs distintos: cada pessoa conta uma vez por unidade e por ano, de janeiro a dezembro.") + juntos
+
+
+# O que entra em cada base da proposta (entidade → escopo).
+ENTRA = {"SEST": {1: "Odontologia, fisioterapia, psicologia e nutrição", 2: "Todas as especialidades, sem as campanhas"},
+         "SENAT": {1: "Cursos presenciais, sem palestras e sem Educação de Jovens e Adultos", 2: "Todos os cursos e modalidades, com ensino a distância e palestras"},
+         COMBINADA: {1: "As 4 especialidades do SEST e os cursos filtrados do SENAT", 2: "Tudo do SEST (sem campanhas) e tudo do SENAT"}}
 
 
 def num(v, casas: int = 0) -> str:
@@ -35,6 +42,20 @@ def num(v, casas: int = 0) -> str:
 
 def pct(v, casas: int = 1, sinal: bool = False) -> str:
     return gt.br(v * 100, casas, sinal=sinal, sufixo="%")
+
+
+def esforco_padrao(p: dict) -> str:
+    """Esforço padrão = o delta Nacional em módulo; * = a média encontrada é negativa."""
+    return pct(p["delta"], 2) + ("*" if p["nacional"] < 0 else "")
+
+
+NOTA_MODULO = "* A média encontrada é negativa (queda). Ela entra em módulo, isto é, sem o sinal, para estimular a retomada do crescimento."
+
+
+def nota_media(marca: str = "¹") -> str:
+    """Nota de rodapé: a média é geométrica, e por quê."""
+    return (f"{marca} Média geométrica: o crescimento constante que, repetido todo ano, leva do número de 2023 ao de 2026. Usamos a geométrica porque cada ano cresce sobre o "
+            "resultado do ano anterior; com a média simples das variações anuais, a conta não chegaria ao mesmo número de 2026.")
 
 
 def mil(v) -> str:
@@ -50,8 +71,8 @@ def lx(v, casas: int = 0) -> str:
 
 
 def rotulos_anos(anos) -> list[str]:
-    """Anos do eixo; o ano corrente sempre marcado como estimativa."""
-    return [f"{a}\nestimativa" if a == ANO_CORRENTE else str(a) for a in anos]
+    """Anos do eixo; o ano corrente sempre marcado como projeção."""
+    return [f"{a}\nprojeção" if a == ANO_CORRENTE else str(a) for a in anos]
 
 
 def conta(linhas: list[tuple[str, str]]) -> None:
