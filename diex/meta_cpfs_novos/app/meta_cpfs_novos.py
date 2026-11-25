@@ -15,10 +15,12 @@ import streamlit as st  # noqa: E402
 
 from abas import analise, comparacao, introducao, mercado  # noqa: E402
 from common.painel.casca import aplicar_tema, cabecalho, rodape  # noqa: E402
+from scripts import apresentacao  # noqa: E402
 from scripts.sidebar import filtros, visao  # noqa: E402
 
 st.set_page_config(page_title="Meta de CPFs novos", layout="wide")
 aplicar_tema(APP / "estudo.css", filtros=True)   # casca + barra lateral no padrão da Matriz (common/painel)
+apresentacao.abrir_ao_entrar()
 cabecalho("Meta de CPFs novos")
 
 f = visao(filtros())

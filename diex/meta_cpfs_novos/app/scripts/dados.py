@@ -9,8 +9,9 @@ import recortes as R
 from common.painel.classico import MESES_PT
 
 COMBINADA, AREAS_SEST = R.COMBINADA, R.AREAS_SEST
-ESCOPO = {"SEST": {1: "4 especialidades", 2: "Todas, sem campanhas"}, "SENAT": {1: "Filtradas", 2: "Todas"},
-          COMBINADA: {1: "4 + filtradas", 2: "Todas, sem campanhas"}}   # as duas bases da proposta (R.selecao)
+CENARIOS = {1: "Cenário A", 2: "Cenário B"}       # as duas bases da proposta (R.selecao), com os nomes da apresentação; o que entra está em comum.ENTRA
+ESCOPO = {e: CENARIOS for e in R.ENTIDADES}
+NOME_ENTIDADE = {COMBINADA: "SEST SENAT"}          # nome na tela
 PESOS = [round(100 * w) for w in M.PESOS]
 NACIONAL = 0
 PARTIDA = "2023 partida"                 # coluna de 2023 sem histórico (aba Mês a mês)
@@ -63,7 +64,7 @@ def horas(n: int) -> dict:
     return p | {"unidades": _rotular(p["unidades"].loc[p["universo"]])}
 
 
-@st.cache_data(show_spinner="Calculando a meta pelo fator de mercado…")
+@st.cache_data(show_spinner="Calculando a meta…")
 def mercado(entidade: str, escopo: int = 1, ano: bool = False) -> dict:
     """A proposta em uma das bases (escopo 1 ou 2 de R.selecao): delta Nacional (crescimento constante 2023→2026 das unidades maduras, na
     contagem da meta) em módulo, com o esforço do mercado."""
@@ -150,11 +151,15 @@ def grupos_porte(m: pd.DataFrame) -> pd.DataFrame:
     return g.sort_values("de")
 
 
+def nome(entidade: str) -> str:
+    return NOME_ENTIDADE.get(entidade, entidade)
+
+
 def nome_unidade(p: dict, unidade: int) -> str:
     return "Nacional" if unidade == NACIONAL else p["unidades"].rotulo.get(unidade, str(unidade))
 
 
-@st.cache_data(show_spinner="Calculando as unidades maduras…")
+@st.cache_data(show_spinner="Calculando as unidades analisadas…")
 def maduras(entidade: str, selecao: tuple[str, ...] | None, medida: str, ano: bool = False) -> dict:
     """Unidades com 5+ anos em 2023 e anos completos, na contagem da meta (12 meses exatos ou CPFs distintos):
     série, total, variação de cada ano sobre o anterior e, por unidade, a média geométrica 2023→2026, (fim ÷ início)^(1/3) − 1."""

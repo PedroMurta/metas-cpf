@@ -360,3 +360,13 @@ def proposta3(entidade: str, p: dict, nacional: float) -> dict:
 
 def resumo_mercado(m: pd.DataFrame) -> dict:
     return {**m[["base", "partida", "meta"]].sum().to_dict(), "minimo": m.meta_pct.min(), "maximo": m.meta_pct.max(), "nacional_pct": m.meta.sum() / m.base.sum() - 1}
+
+
+BASE_EX, FE_EX = 2000, .15     # unidade inventada dos exemplos: com 6,95%, o esforço padrão dá 139 pessoas
+
+
+def exemplo(delta: float) -> dict:
+    """Conta da unidade inventada com o esforço padrão real (2 casas, como nos textos): padrão, mercado e meta."""
+    padrao = round(BASE_EX * round(delta, 4), 1)
+    mercado = round(padrao * FE_EX, 2)
+    return {"g": round(delta, 4), "padrao": padrao, "mercado": mercado, "meta": int(np.ceil(round(BASE_EX + padrao + mercado, 6))), "inteiro": padrao == int(padrao)}

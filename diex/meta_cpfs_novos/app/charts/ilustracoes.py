@@ -45,7 +45,7 @@ def _seta(x1, y, x2, cor=CONTEXTO2) -> str:
 
 
 def _vale(v: bool, x, y, cor) -> str:
-    return _selo(x, y, "novo CPF" if v else "não conta", cor if v else CONTEXTO2, v)
+    return _selo(x, y, "novo CPF" if v else "não contará", cor if v else CONTEXTO2, v)
 
 
 def quadros(itens: list[tuple[str, str, str]]) -> None:
@@ -85,12 +85,12 @@ def varios_para_um(rotulos: list[str], cor: str, alt: str) -> str:
     y0 = 78 - (n * (alto + 6) - 6) / 2
     c = "".join(f'<rect x="10" y="{y0 + i * (alto + 6)}" width="130" height="{alto}" rx="8" fill="{BRANCO}" stroke="{CONTEXTO2}"/>'
                 + _t(75, y0 + i * (alto + 6) + 20, r, FORTE, 12, 600) for i, r in enumerate(rotulos))
-    return _svg(c + _seta(152, 78, 205) + _pessoa(255, 92, cor, 1.5) + _selo(255, 122, "conta 1", cor), alt)
+    return _svg(c + _seta(152, 78, 205) + _pessoa(255, 92, cor, 1.5) + _selo(255, 122, "contará 1", cor), alt)
 
 
 def duas_unidades(cor: str, alt: str) -> str:
     return _svg(_predio(60, 88, CONTEXTO2, 1, "Unidade A") + _predio(260, 88, CONTEXTO2, 1, "Unidade B") + _pessoa(160, 88, cor, 1.4)
-                + f'<path d="M136 70 H98 M184 70 H222" stroke="{cor}" stroke-width="2.5" stroke-dasharray="4 4"/>' + _selo(60, 130, "conta 1", cor) + _selo(260, 130, "conta 1", cor), alt)
+                + f'<path d="M136 70 H98 M184 70 H222" stroke="{cor}" stroke-width="2.5" stroke-dasharray="4 4"/>' + _selo(60, 130, "contará 1", cor) + _selo(260, 130, "contará 1", cor), alt)
 
 
 # Período ------------------------------------------------------------------------------------------------------------
@@ -130,10 +130,12 @@ def pontos100(cor: str, n: int, alt: str) -> str:
     return _svg(c + _selo(80, 148, f"penetração {n}%", cor) + _selo(236, 148, f"lacuna {100 - n}%", CONTEXTO2, False), alt)
 
 
-def termometro(cor: str, esforcos: list[str], potencial, fm: float, alt: str) -> str:
-    """Régua do fator de mercado de 0 a 1: quatro faixas, com o potencial e o esforço de cada uma."""
+def termometro(cor: str, esforcos: list[str], potencial, fm: float | None, alt: str) -> str:
+    """Régua de quatro faixas, com o potencial e o esforço de cada uma; com `fm`, a nota do fator de mercado (0 a 1) e o marcador."""
     c = "".join(f'<rect x="{10 + i * 75}" y="58" width="73" height="34" rx="6" fill="{cor}" fill-opacity="{.15 + .2 * i}"/>' + _t(46 + i * 75, 81, e, FORTE, 15, 700) + _t(46 + i * 75, 112, p, TEXTO, 11, 600)
                 for i, (e, p) in enumerate(zip(esforcos, potencial)))
+    if fm is None:
+        return _svg(c + _t(12, 134, "pouco espaço", TEXTO, 11, 500, "start") + _t(308, 134, "muito espaço", TEXTO, 11, 500, "end"), alt)
     x = 10 + fm * 300
     return _svg(c + f'<path d="M{x - 7} 42 h14 l-7 11 z" fill="{FORTE}"/>' + _t(x, 34, f"FM {fm:.2f}".replace(".", ","), FORTE, 12, 700)
                 + _t(12, 134, "0: pouco espaço", TEXTO, 11, 500, "start") + _t(308, 134, "1: muito espaço", TEXTO, 11, 500, "end"), alt)
@@ -150,17 +152,17 @@ def fila(cor: str, posicao: float, legenda: str, alt: str) -> str:
     return _svg(c + f'<path d="M12 127 v7 H{4 + k * 27.6} v-7" fill="none" stroke="{TEXTO}" stroke-width="1.5"/>' + _t(12, 150, legenda, TEXTO, 12, 600, "start"), alt)
 
 
-def mesmo_passo(cor: str, alt: str) -> str:
+def mesmo_passo(cor: str, alt: str, passo: str) -> str:
     c = ""
     for i, h in enumerate((34, 52, 70)):
         x, extra = 46 + i * 94, h * .24
-        c += f'<rect x="{x}" y="{122 - h}" width="46" height="{h}" rx="5" fill="{CONTEXTO2}"/><rect x="{x}" y="{122 - h - extra - 2}" width="46" height="{extra}" rx="5" fill="{cor}"/>' + _t(x + 23, 118 - h - extra - 4, "+7%", FORTE, 12, 700)
+        c += f'<rect x="{x}" y="{122 - h}" width="46" height="{h}" rx="5" fill="{CONTEXTO2}"/><rect x="{x}" y="{122 - h - extra - 2}" width="46" height="{extra}" rx="5" fill="{cor}"/>' + _t(x + 23, 118 - h - extra - 4, f"+{passo}", FORTE, 12, 700)
     return _svg(c + "".join(_t(69 + i * 94, 140, f"Unidade {u}", TEXTO, 11) for i, u in enumerate("ABC")), alt)
 
 
-def barra_meta(cor: str, total: str, partes: list[tuple[str, str, float]], alt: str) -> str:
-    """2026 (1.000) na base e as partes empilhadas: (texto dentro, texto ao lado, opacidade); sem texto dentro = faixa fina."""
-    c, y = f'<rect x="30" y="92" width="92" height="58" rx="6" fill="{CONTEXTO2}"/>' + _t(76, 126, "1.000", FORTE, 14, 700) + _t(134, 126, "2026", TEXTO, 13, 500, "start"), 90
+def barra_meta(cor: str, base: str, total: str, partes: list[tuple[str, str, float]], alt: str) -> str:
+    """2026 (`base`) embaixo e as partes empilhadas: (texto dentro, texto ao lado, opacidade); sem texto dentro = faixa fina."""
+    c, y = f'<rect x="30" y="92" width="92" height="58" rx="6" fill="{CONTEXTO2}"/>' + _t(76, 126, base, FORTE, 14, 700) + _t(134, 126, "2026", TEXTO, 13, 500, "start"), 90
     for dentro, lado, op in partes:
         h = 30 if dentro else 14
         c += f'<rect x="30" y="{y - h}" width="92" height="{h}" rx="5" fill="{cor}" fill-opacity="{op}"/>' + _t(76, y - h / 2 + 5, dentro, FORTE, 13, 700) + _t(134, y - h / 2 + 5, lado, TEXTO, 13, 500, "start")

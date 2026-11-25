@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 
-from abas.comum import CINZA, ENTRA, assunto, contados, cor, mil, nota_media, num, pct, regra_contagem, rotulos_anos
+from abas.comum import CINZA, assunto, contados, cor, entra, mil, nota_media, num, pct, regra_contagem, rotulos_anos
 from common.metas import media_geometrica
 from common.painel.classico import FORTE, divergente
 from common import painel as gt
@@ -18,8 +18,8 @@ FAIXAS = [(-np.inf, 0, "Queda"), (0, .05, "0% a\n5%"), (.05, .10, "5% a\n10%"), 
 def _recorte(f) -> tuple[tuple, str]:
     """Recorte próprio da aba: as duas bases da proposta, na entidade escolhida."""
     rotulos = D.ESCOPO[f.entidade]
-    escopo = st.pills("Especialidades da análise", list(rotulos), default=1, key=f"an_esc_{f.entidade}", format_func=rotulos.get) or 1
-    return (f.entidade, D.selecao_proposta(escopo, f.entidade), f.medida, f.ano), f"{f.entidade} · {ENTRA[f.entidade][escopo].lower() if f.entidade != D.COMBINADA else rotulos[escopo]}"
+    escopo = st.pills("Cenário da análise", list(rotulos), default=1, key=f"an_esc_{f.entidade}", format_func=rotulos.get) or 1
+    return (f.entidade, D.selecao_proposta(escopo, f.entidade), f.medida, f.ano), f"{D.nome(f.entidade)} · {rotulos[escopo]}: {entra(f.entidade, escopo)}"
 
 
 def _evolucao(f, a, chave, rotulo) -> None:
@@ -28,7 +28,7 @@ def _evolucao(f, a, chave, rotulo) -> None:
     if f.unidade in a["pessoas"].index:
         serie, nome = s.xs(f.unidade, level="id_unidade").contagem, a["unidades"].rotulo.get(f.unidade)
     else:
-        serie, nome = a["total"].contagem, f"{f.entidade}, {len(a['pessoas'])} unidades maduras"
+        serie, nome = a["total"].contagem, f"{D.nome(f.entidade)}, {len(a['pessoas'])} unidades analisadas"
     v = serie / serie.iloc[0] - 1
     anos = len(serie) - 1
     g = media_geometrica(serie.iloc[0], serie.iloc[-1], anos)
@@ -96,7 +96,7 @@ def render(f) -> None:
         gt.tabela(pd.DataFrame(linhas), texto=2)
 
     with gt.cartao("an_unidades"):
-        gt.cabecalho("Por unidade", f"{contados(f)} de cada unidade madura",
+        gt.cabecalho("Por unidade", f"{contados(f)} de cada unidade analisada",
                      f"{rotulo} · ordem por tipologia e número · 2026 é projeção")
         ids = u.index
         df = pd.DataFrame({"Unidade": u.rotulo, "Conselho": u.conselho_curto})
