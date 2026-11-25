@@ -2,7 +2,7 @@
 import pandas as pd
 import streamlit as st
 
-from abas.comum import baixar_excel, contados, cor, entra, mil, num, pct
+from abas.comum import TODOS_PUBLICOS, baixar_excel, contados, cor, entra, mil, num, pct
 from common import painel as gt
 from common.painel.casca import nota
 from recortes import ENTIDADES
@@ -18,7 +18,7 @@ def render(f) -> None:
 
     with gt.cartao("comp_nacional"):
         maior = max(r, key=lambda k: r[k]["nacional_pct"])
-        gt.cabecalho("Nacional", f"Maior alta: {D.nome(maior[0])}, cenário {ESCOPOS[maior[1]][-1]}, {pct(r[maior]['nacional_pct'], 1, sinal=True)}",
+        gt.cabecalho(f"Nacional · {TODOS_PUBLICOS}", f"Maior alta: {D.nome(maior[0])}, cenário {ESCOPOS[maior[1]][-1]}, {pct(r[maior]['nacional_pct'], 1, sinal=True)}",
                      f"{contados(f)} · 2026 é projeção · {num(len(p[linhas[0]]['metas']))} unidades")
         gt.tabela(pd.DataFrame([{
             "Entidade": D.nome(k[0]), "Cenário": ESCOPOS[k[1]][-1], "2026 proj.": mil(r[k]["base"]), "Crescimento padrão": pct(p[k]["delta"], 2),
@@ -26,14 +26,14 @@ def render(f) -> None:
         st.caption("Crescimento padrão: igual para todas as unidades. Por unidade: a menor e a maior meta, sobre 2026. SEST SENAT não é a soma das duas linhas: quem é atendido nos dois, na mesma unidade, contará uma vez.")
 
     with gt.cartao("comp_crescimento"):
-        gt.cabecalho("Crescimento da meta", "Quanto a meta de 2027 pedirá a mais que a projeção de 2026", f"{contados(f)} · soma das unidades")
+        gt.cabecalho(f"Crescimento da meta · {TODOS_PUBLICOS}", "Quanto a meta de 2027 pedirá a mais que a projeção de 2026", f"{contados(f)} · soma das unidades")
         gt.grafico(f"comp_cresc_{f.chave}", gt.barras_h([f"{D.nome(k[0])} · {ESCOPOS[k[1]]}" for k in linhas], [x["nacional_pct"] * 100 for x in r.values()],
                                                         [cor(k[0]) for k in linhas], textos=[pct(x["nacional_pct"], 1, sinal=True) for x in r.values()]), 300)
 
     escopo = st.pills("Cenário da comparação", list(ESCOPOS), default=1, key="comp_escopo", format_func=ESCOPOS.get) or 1
     with gt.cartao("comp_unidades"):
         u, uid = p["SEST", escopo]["unidades"], f.unidade
-        gt.cabecalho("Por unidade", "Projeção de 2026 e meta de 2027 em cada entidade",
+        gt.cabecalho(f"Por unidade · {TODOS_PUBLICOS}", "Projeção de 2026 e meta de 2027 em cada entidade",
                      f"{ESCOPOS[escopo]}. Entre parênteses, quanto a meta representa sobre a projeção de 2026")
         df = pd.DataFrame({"Unidade": u.rotulo})
         bruto = pd.DataFrame({"unidade": u.rotulo, "conselho": u.conselho_curto})

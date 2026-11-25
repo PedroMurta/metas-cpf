@@ -3,7 +3,7 @@ import pandas as pd
 import streamlit as st
 
 import modelo as M
-from abas.comum import ENTRA, contados, cor, mil, nota_media, num, pct, regra_contagem
+from abas.comum import ENTRA, TODOS_PUBLICOS, contados, cor, mil, nota_media, num, pct, regra_contagem
 from charts import ilustracoes as I
 from common import painel as gt
 from scripts import dados as D
@@ -91,7 +91,7 @@ def _resumo(f, c: str, p: dict, rot: dict) -> None:
     x, b = M.exemplo(p[1]["delta"]), num(M.BASE_EX)
     v = lambda q, casas: num(q, 0 if x["inteiro"] else casas)     # inteiro quando o crescimento padrão é inteiro
     g, sp, sm, meio, meta = pct(x["g"], 2), v(x["padrao"], 1), v(x["mercado"], 2), v(M.BASE_EX + x["padrao"], 1), num(x["meta"])
-    gt.cabecalho("A proposta", "Meta = base + [crescimento padrão × (1 + esforço de mercado)]", f"{D.nome(f.entidade)} · {num(len(p[1]['metas']))} unidades · {contados(f)} · exemplo com {b} pessoas em 2026 e o crescimento padrão do {rot[1]}")
+    gt.cabecalho(f"A proposta · {TODOS_PUBLICOS}", "Meta = base + [crescimento padrão × (1 + esforço de mercado)]", f"{D.nome(f.entidade)} · {num(len(p[1]['metas']))} unidades · {contados(f)} · exemplo com {b} pessoas em 2026 e o crescimento padrão do {rot[1]}")
     I.quadros([
         ("1. Some o crescimento padrão", I.barra_meta(c, b, meio, [(f"+ {sp}", f"crescimento padrão ({g})", .5)], f"{b} pessoas em 2026 mais {sp} do crescimento padrão: {meio}."),
          f"A porcentagem será igual para todas: {g} de {b} pessoas são {sp}."),

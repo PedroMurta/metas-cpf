@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 
-from abas.comum import CINZA, assunto, contados, cor, do_publico, entra, mil, nota_media, num, pct, publico_nota, regra_contagem, rotulos_anos
+from abas.comum import CINZA, ENTRA, assunto, cenarios_aviso, contados, cor, do_publico, entra, grade, mil, nota_media, num, pct, publico_nota, regra_contagem, rotulos_anos
 from common.metas import media_geometrica
 from common.painel.classico import FORTE, divergente
 from common import painel as gt
@@ -16,10 +16,14 @@ FAIXAS = [(-np.inf, 0, "Queda"), (0, .05, "0% a\n5%"), (.05, .10, "5% a\n10%"), 
 
 
 def _recorte(f) -> tuple[tuple, str]:
-    """Recorte próprio da aba: as duas bases da proposta, na entidade escolhida."""
+    """Recorte próprio da aba: as duas bases da proposta, na entidade escolhida, com a descrição dos cenários."""
     rotulos = D.ESCOPO[f.entidade]
     escopo = st.pills("Cenário da análise", list(rotulos), default=1, key=f"an_esc_{f.entidade}", format_func=rotulos.get) or 1
-    return (f.entidade, D.selecao_proposta(escopo, f.entidade), f.medida, f.ano, f.publico), f"{D.nome(f.entidade)}{do_publico(f)} · {rotulos[escopo]}: {entra(f.entidade, escopo)}"
+    with gt.cartao("an_cenarios"):
+        gt.cabecalho(f"{D.nome(f.entidade)} · {do_publico(f)} · cenário escolhido", f"{rotulos[escopo]}: {entra(f.entidade, escopo)}", "Use o seletor acima para trocar de cenário e a barra lateral para trocar de público. Toda a aba muda junto.")
+        grade(["Cenário", "O que entra"], [[nome, ENTRA[f.entidade][n]] for n, nome in rotulos.items()], list(rotulos).index(escopo))
+        cenarios_aviso(f.entidade)
+    return (f.entidade, D.selecao_proposta(escopo, f.entidade), f.medida, f.ano, f.publico), f"{D.nome(f.entidade)} · {rotulos[escopo]}: {entra(f.entidade, escopo)}"
 
 
 def _evolucao(f, a, chave, rotulo) -> None:
@@ -28,12 +32,12 @@ def _evolucao(f, a, chave, rotulo) -> None:
     if f.unidade in a["pessoas"].index:
         serie, nome = s.xs(f.unidade, level="id_unidade").contagem, a["unidades"].rotulo.get(f.unidade)
     else:
-        serie, nome = a["total"].contagem, f"{D.nome(f.entidade)}{do_publico(f)}, {len(a['pessoas'])} unidades analisadas"
+        serie, nome = a["total"].contagem, f"{D.nome(f.entidade)}, {len(a['pessoas'])} unidades analisadas"
     v = serie / serie.iloc[0] - 1
     anos = len(serie) - 1
     g = media_geometrica(serie.iloc[0], serie.iloc[-1], anos)
     neg, _, pos = divergente(assunto(f.entidade))
-    gt.cabecalho("Evolução", f"{nome}: {pct(v.iloc[-1], 1, sinal=True)} entre {serie.index[0]} e {serie.index[-1]}, "
+    gt.cabecalho(f"Evolução · {do_publico(f)}", f"{nome}: {pct(v.iloc[-1], 1, sinal=True)} entre {serie.index[0]} e {serie.index[-1]}, "
                              f"média¹ de {pct(g, 1)} ao ano",
                  f"{contados(f)} na unidade. Os selos mostram a variação sobre o ano anterior; a linha tracejada, a "
                  f"média¹ de {pct(g, 1)} ao ano. {rotulo}. "
@@ -74,7 +78,7 @@ def render(f) -> None:
         cont = [int(((g >= lo) & (g < hi)).sum()) for lo, hi, _ in FAIXAS]
         rot = [x for *_, x in FAIXAS]
         topo = rot[int(np.argmax(cont))]
-        gt.cabecalho("Média¹", f"A faixa mais comum é {'a de queda' if topo == 'Queda' else topo.replace(chr(10), ' ')}: "
+        gt.cabecalho(f"Média¹ · {do_publico(f)}", f"A faixa mais comum é {'a de queda' if topo == 'Queda' else topo.replace(chr(10), ' ')}: "
                                    f"{num(max(cont))} unidades",
                      f"{contados(f)} de 2023 a 2026, por unidade")
         cores = [CINZA] * len(cont)
@@ -91,12 +95,12 @@ def render(f) -> None:
                                "Total": pct(t.loc[ano, m] / t.loc[ano - 1, m] - 1, 1, sinal=True),
                                "Metade das unidades": f"{pct(v.quantile(.25), 1)} a {pct(v.quantile(.75), 1)}",
                                "Com queda": num((v < 0).sum())})
-        gt.cabecalho("Ano a ano", "Variação de cada ano sobre o anterior",
+        gt.cabecalho(f"Ano a ano · {do_publico(f)}", "Variação de cada ano sobre o anterior",
                      "Total: soma das unidades · metade das unidades: as do meio, sem o quarto mais baixo e o mais alto")
         gt.tabela(pd.DataFrame(linhas), texto=2)
 
     with gt.cartao("an_unidades"):
-        gt.cabecalho("Por unidade", f"{contados(f)} de cada unidade analisada",
+        gt.cabecalho(f"Por unidade · {do_publico(f)}", f"{contados(f)} de cada unidade analisada",
                      f"{rotulo} · ordem por tipologia e número · 2026 é projeção")
         ids = u.index
         df = pd.DataFrame({"Unidade": u.rotulo, "Conselho": u.conselho_curto})

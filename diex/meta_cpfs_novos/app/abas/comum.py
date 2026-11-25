@@ -24,9 +24,12 @@ def contados(f, meio: bool = False) -> str:
     return (("novos CPFs" if meio else "Novos CPFs") if f.doze else "CPFs distintos")
 
 
+TODOS_PUBLICOS = "Todos os públicos"
+
+
 def do_publico(f) -> str:
-    """Complemento do título quando há filtro de público: " · Transporte (com dependentes)"."""
-    return "" if not f.publico else " · Transporte (com dependentes)" if f.publico == "Transporte" else f" · {f.publico}"
+    """Público do filtro, para o rótulo dos gráficos e tabelas que mudam com ele (os outros usam TODOS_PUBLICOS)."""
+    return {None: TODOS_PUBLICOS, "Transporte": "Transporte (com dependentes)"}.get(f.publico, f.publico)
 
 
 def regra_contagem(f) -> str:
@@ -88,6 +91,17 @@ def conta(linhas: list[tuple[str, str]]) -> None:
     """Conta passo a passo (rótulo → valor)."""
     st.html("<div class='streamlit-conta'>" + "".join(f"<div><span>{a}</span><b>{b}</b></div>" for a, b in linhas)
             + "</div>")
+
+
+def grade(colunas: list[str], linhas: list[list[str]], destaque: int | None = None) -> None:
+    """Tabela com linhas e colunas marcadas e texto que quebra; `destaque` = linha em negrito."""
+    corpo = "".join(f"<tr{' class=streamlit-grade-forte' if k == destaque else ''}>" + "".join(f"<td>{v}</td>" for v in l) + "</tr>" for k, l in enumerate(linhas))
+    st.html(f"<div class='streamlit-grade'><table><thead><tr>{''.join(f'<th>{c}</th>' for c in colunas)}</tr></thead><tbody>{corpo}</tbody></table></div>")
+
+
+def cenarios_aviso(entidade: str) -> None:
+    if "EJA" in ENTRA[entidade][1]:
+        st.caption("EJA: Educação de Jovens e Adultos.")
 
 
 def baixar_excel(df, nome: str, chave: str) -> None:
