@@ -78,18 +78,24 @@ def rotulo_regra(m: pd.DataFrame, k: int) -> pd.Series:
     return m.regra.map(REGRA).mask(m[f"piso_{k}"], "Crescimento mínimo")
 
 
-def serie_de(p: dict, unidade: int, coluna: str = "contagem") -> pd.Series:
-    """Ano → valor da unidade ou, no Nacional, a soma das unidades com meta."""
-    s = p["serie"][coluna]
+def serie_de(p: dict, unidade: int, s: pd.Series | None = None) -> pd.Series:
+    """Ano → contagem (ou a série `s`) da unidade ou, no Nacional, a soma das unidades com meta."""
+    s = p["serie"].contagem if s is None else s
     return s.xs(unidade, level="id_unidade") if unidade in p["metas"].index else s.groupby(level="ano").sum()
 
 
+@st.cache_data(show_spinner="Separando o público…")
+def serie_publico(entidade: str, escopo: int, publico: str) -> pd.Series:
+    """Contagem do público por unidade com meta e ano, com 2026 projetado (a meta não muda)."""
+    return M.por_publico(entidade, list(selecao_proposta(escopo, entidade)), medida(entidade), publico, mercado(entidade, escopo)["serie"].contagem)
+
+
 @st.cache_data(show_spinner=False)
-def serie_todas(entidade: str, selecao: tuple[str, ...], ano: bool = False) -> pd.Series:
+def serie_todas(entidade: str, selecao: tuple[str, ...], ano: bool = False, publico: str | None = None) -> pd.Series:
     """Contagem por ano (12 meses ou, com `ano`, CPFs distintos) somando todas as unidades (inclusive as sem meta)."""
     if ano:
         return R.recorte(entidade, list(selecao)).groupby("ano").pessoas.sum()
-    return R.contagem(entidade, list(selecao)).groupby("ano").contagem.sum()
+    return R.contagem(entidade, list(selecao), publico).groupby("ano").contagem.sum()
 
 
 def _completar(t: pd.DataFrame, total: float) -> pd.DataFrame:
@@ -133,12 +139,12 @@ def primeiro_estudo() -> pd.DataFrame:
                       ano.rename("Ano completo").to_frame().T])
 
 
-def historico(p: dict, entidade: str, unidade: int) -> tuple[pd.Series, str]:
+def historico(p: dict, entidade: str, unidade: int, publico: str | None = None, escopo: int = 1) -> tuple[pd.Series, str]:
     """Contagem por ano (unidade ou Nacional) e a ressalva do Nacional do SEST, cujos anos fechados somam todas as unidades."""
-    h = serie_de(p, unidade)
+    h = serie_de(p, unidade, serie_publico(entidade, escopo, publico) if publico else None)
     if not p["oficial"] or unidade in p["metas"].index:
         return h, ""
-    todas = serie_todas(entidade, tuple(R.selecao(entidade, 1)), p["ano"])
+    todas = serie_todas(entidade, tuple(R.selecao(entidade, 1)), p["ano"], publico)
     return todas.where(todas.index < M.ANO_CORRENTE).fillna(h), (
         f" Até 2025, todas as unidades; 2026 e 2027, as {len(p['metas'])} com meta.")
 
@@ -160,11 +166,13 @@ def nome_unidade(p: dict, unidade: int) -> str:
 
 
 @st.cache_data(show_spinner="Calculando as unidades analisadas…")
-def maduras(entidade: str, selecao: tuple[str, ...] | None, medida: str, ano: bool = False) -> dict:
+def maduras(entidade: str, selecao: tuple[str, ...] | None, medida: str, ano: bool = False, publico: str | None = None) -> dict:
     """Unidades com 5+ anos em 2023 e anos completos, na contagem da meta (12 meses exatos ou CPFs distintos):
     série, total, variação de cada ano sobre o anterior e, por unidade, a média geométrica 2023→2026, (fim ÷ início)^(1/3) − 1."""
     from common.metas import media_geometrica
     s = M.maduras(entidade, None if selecao is None else list(selecao), medida, ano=ano)
+    if publico:
+        s = s.assign(contagem=M.por_publico(entidade, list(selecao), medida, publico, s.contagem))
     u = _rotular(M.unidades())
     total = s.groupby(level="ano")[M.METRICAS].sum()
     cp = s.contagem.unstack()

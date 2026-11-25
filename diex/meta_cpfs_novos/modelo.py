@@ -9,7 +9,7 @@ Guardadas, fora do painel: Proposta 1 (seleção inicial) e Proposta 2 (todas), 
 import numpy as np
 import pandas as pd
 
-from recortes import ANO_CORRENTE, COMBINADA, DADOS, contagem, producao, recorte, sql
+from recortes import ANO_CORRENTE, COMBINADA, DADOS, PUBLICOS, contagem, producao, recorte, sql
 
 ANOS_FRACAO = (2023, 2024, 2025)   # anos fechados que dão a fração do ano alcançada até o CORTE
 PESO_PROPRIA = 0.5                 # peso da fração da própria unidade na projeção (o resto é a nacional)
@@ -30,16 +30,16 @@ def unidades() -> pd.DataFrame:
 
 
 # Passo 1 · base do recorte ------------------------------------------------------------------------------------------
-def base(entidade: str, selecao: list[str] | None = None, medida: str = "atendimentos", ano: bool = False) -> pd.DataFrame:
+def base(entidade: str, selecao: list[str] | None = None, medida: str = "atendimentos", ano: bool = False, publico: str | None = None) -> pd.DataFrame:
     """Unidade × ano: pessoas, novos, contagem e produção (atendimentos ou horas), no ano e até o CORTE. `ano`: visão do ano civil, em
-    que a contagem são os CPFs distintos no ano civil."""
+    que a contagem são os CPFs distintos no ano civil. `publico`: só a contagem é a do público; pessoas e produção seguem as de todos."""
     r = recorte(entidade, selecao)
     p = producao(entidade, selecao)
     p = p.rename(columns={medida: "producao", f"{medida}_corte": "producao_corte"})[
         ["id_unidade", "ano", "producao", "producao_corte"]]
     b = r.merge(p, on=["id_unidade", "ano"], how="outer")
     b = (b.assign(contagem=b.pessoas, contagem_corte=b.pessoas_corte) if ano else
-         b.merge(contagem(entidade, selecao), on=["id_unidade", "ano"], how="left"))
+         b.merge(contagem(entidade, selecao, publico), on=["id_unidade", "ano"], how="left"))
     b = b.fillna(0)
     return b.set_index(["id_unidade", "ano"]).sort_index()
 
@@ -76,6 +76,15 @@ def projetar(b: pd.DataFrame, inauguracao: pd.Series, alvo: int = ANO_CORRENTE) 
     serie["novos"] = serie.novos.clip(upper=serie.pessoas)
     serie["projetado"] = serie.index.get_level_values("ano") == alvo
     return serie
+
+
+def por_publico(entidade: str, selecao: list[str], medida: str, publico: str, total: pd.Series) -> pd.Series:
+    """Contagem `total` (unidade × ano, com o ano corrente projetado) só do público (recortes.PUBLICOS). Cada público é projetado com a fração dele e entra pela
+    parcela na soma: Transporte + Comunidade fecha com o total. Não muda a meta."""
+    inaug = unidades().ano_inauguracao
+    partes = pd.DataFrame({k: projetar(base(entidade, selecao, medida, publico=k), inaug).contagem for k in PUBLICOS}).reindex(total.index).fillna(0)
+    soma = partes.sum(axis=1)
+    return (total * partes[publico] / soma.where(soma > 0)).fillna(0)
 
 
 # Passo 3 · universo -------------------------------------------------------------------------------------------------

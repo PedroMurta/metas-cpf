@@ -4,7 +4,7 @@ import pandas as pd
 import streamlit as st
 
 import modelo as M
-from abas.comum import ENTRA, assunto, baixar_excel, conta, contados, cor, entra, lx, mil, num, pct, regra_contagem, rotulos_anos
+from abas.comum import ENTRA, assunto, baixar_excel, conta, contados, cor, do_publico, entra, lx, mil, num, pct, publico_nota, regra_contagem, rotulos_anos
 from common import painel as gt
 from common.painel.casca import nota
 from common.painel.classico import divergente
@@ -37,28 +37,22 @@ def render(f) -> None:
         _conta_real(f, p, uid)
 
     with gt.cartao("p3_evolucao"):
-        hist, obs = D.historico(p, f.entidade, uid)
-        x = m.loc[uid] if uid in m.index else m[["base", "partida", "meta"]].sum()
-        vals, i = [*hist.tolist(), x.partida, x.meta], len(hist) - 1
-        neg, _, pos = divergente(assunto(f.entidade))
-        gt.cabecalho("Evolução", f"{D.nome_unidade(p, uid)}: meta de {pct(x.meta / x.base - 1, 1, sinal=True)} em 2027",
-                     f"{contados(f)} por ano; 2026 é projeção. Os selos de 2027 comparam com 2026.{obs}")
-        gt.grafico(f"evo_p3_{f.chave}_{escopo}_{uid}", gt.evolucao(
-            [*rotulos_anos(hist.index), "2027\ncrescimento padrão", "2027\nmeta"], vals, cor(f.entidade), textos=[mil(v) for v in vals],
-            cores_var=(neg, pos), apagadas=list(range(i, len(vals) - 1)), comparar={j: i for j in range(i + 1, len(vals))}), 380)
-        st.caption(f"**Crescimento padrão:** 2026 mais {pct(g, 2)}, igual para todas as unidades.  \n**Meta:** 2026 mais o crescimento padrão e o esforço de mercado de cada unidade.")
+        _evolucao_publico(f, p, escopo) if f.publico else _evolucao(f, p, escopo)
 
     with gt.cartao("p3_unidades"):
         mm = m.loc[u.index]
-        gt.cabecalho("Metas por unidade", f"Meta de 2027 em {contados(f)}", "Base mais o crescimento padrão, igual para todas, e o esforço de mercado de cada unidade")
+        gt.cabecalho("Metas por unidade", f"Meta de 2027 em {contados(f, meio=True)}", "Base mais o crescimento padrão, igual para todas, e o esforço de mercado de cada unidade")
+        pub = D.serie_publico(f.entidade, escopo, f.publico).xs(M.ANO_CORRENTE, level="ano").reindex(u.index) if f.publico else None
         gt.tabela(pd.DataFrame({
             "Unidade": u.rotulo, "Conselho": u.conselho_curto, "CPFs 2026 (projeção)": mm.base.map(num),
+            **({f"{f.publico} 2026": [f"{num(v)} ({pct(v / b, 0)})" for v, b in zip(pub, mm.base)]} if f.publico else {}),
             "Com o crescimento padrão": mm.partida.map(num), "Penetração": mm.penetracao.map(lambda v: pct(v, 1) if pd.notna(v) else "—"),
             "Esforço de mercado": mm.fe.map(lambda v: pct(v, 0)),
             "Meta 2027": [f"{num(v)} ({pct(q, 1, sinal=True)})" for v, q in zip(mm.meta, mm.meta_pct)]}),
             destaque=("Unidade", D.nome_unidade(p, uid)) if uid != D.NACIONAL else None, texto=2, altura=480)
         baixar_excel(pd.DataFrame({
             "unidade": u.rotulo, "conselho": u.conselho_curto, "base_2026_projecao": mm.base.round(0),
+            **({f"{f.publico.lower()}_2026_projecao": pub.round(0)} if f.publico else {}),
             "base_mais_crescimento_padrao": mm.partida.round(0),
             "crescimento_padrao": mm.delta.round(1), "atendidos_2026_projecao": mm.pessoas.round(0), "mercado": mm.mercado, "penetracao": mm.penetracao.round(4),
             "espaco_para_crescer": mm.potencial, "esforco_de_mercado": mm.fe, "meta_2027": mm.meta, "meta_pct": mm.meta_pct.round(4)}),
@@ -72,11 +66,38 @@ def render(f) -> None:
                  ("Meta 2027", mil(r["meta"]), f"{pct(r['nacional_pct'], 1, sinal=True)} sobre a projeção de 2026", ""),
                  ("Menor e maior meta", f"{pct(r['minimo'], 1, sinal=True)} a {pct(r['maximo'], 1, sinal=True)}", "por unidade, sobre 2026", "")])
 
-    nota(f"{regra_contagem(f)} A penetração usa todas as pessoas atendidas no ano. O crescimento padrão vem do crescimento de {pct(p['nacional'], 2, sinal=True)} ao ano, em média, das unidades com pelo menos 5 anos "
+    nota(f"{regra_contagem(f)} {publico_nota(f)}A penetração usa todas as pessoas atendidas no ano. O crescimento padrão vem do crescimento de {pct(p['nacional'], 2, sinal=True)} ao ano, em média, das unidades com pelo menos 5 anos "
          "de inauguração em 2023 e anos completos, com a mesma forma de contar. " + {
              "SEST": "O mercado potencial (saúde) vem de um estudo da ESPM. ", "SENAT": "O mercado potencial (educação) vem de um estudo da ESPM. "}.get(
              f.entidade, "O mercado potencial é a soma de saúde e educação, de um estudo da ESPM; a mesma pessoa pode estar nos dois, e aí a penetração fica menor do que é. ")
          + "2026 é projeção com base histórica.")
+
+
+def _evolucao(f, p: dict, escopo: int) -> None:
+    m, uid, g = p["metas"], f.unidade, p["delta"]
+    hist, obs = D.historico(p, f.entidade, uid)
+    x = m.loc[uid] if uid in m.index else m[["base", "partida", "meta"]].sum()
+    vals, i = [*hist.tolist(), x.partida, x.meta], len(hist) - 1
+    neg, _, pos = divergente(assunto(f.entidade))
+    gt.cabecalho("Evolução", f"{D.nome_unidade(p, uid)}: meta de {pct(x.meta / x.base - 1, 1, sinal=True)} em 2027",
+                 f"{contados(f)} por ano; 2026 é projeção. Os selos de 2027 comparam com 2026.{obs}")
+    gt.grafico(f"evo_p3_{f.chave}_{escopo}_{uid}", gt.evolucao(
+        [*rotulos_anos(hist.index), "2027\ncrescimento padrão", "2027\nmeta"], vals, cor(f.entidade), textos=[mil(v) for v in vals],
+        cores_var=(neg, pos), apagadas=list(range(i, len(vals) - 1)), comparar={j: i for j in range(i + 1, len(vals))}), 380)
+    st.caption(f"**Crescimento padrão:** 2026 mais {pct(g, 2)}, igual para todas as unidades.  \n**Meta:** 2026 mais o crescimento padrão e o esforço de mercado de cada unidade.")
+
+
+def _evolucao_publico(f, p: dict, escopo: int) -> None:
+    """Novos CPFs só do público escolhido, até a projeção de 2026. A meta é uma só e fica no texto."""
+    m, uid = p["metas"], f.unidade
+    hist, obs = D.historico(p, f.entidade, uid, f.publico, escopo)
+    x = m.loc[uid] if uid in m.index else m[["base", "meta"]].sum()
+    parte, (neg, _, pos) = hist.iloc[-1] / x.base, divergente(assunto(f.entidade))
+    gt.cabecalho("Evolução", f"{D.nome_unidade(p, uid)}{do_publico(f)}: {mil(hist.iloc[-1])} em 2026 (projeção), {pct(parte, 1)} do total",
+                 f"{contados(f)} por ano, só do público escolhido; 2026 é projeção.{obs.replace(' e 2027', '')}")
+    gt.grafico(f"evo_p3_{f.chave}_{escopo}_{uid}", gt.evolucao(rotulos_anos(hist.index), hist.tolist(), cor(f.entidade), textos=[mil(v) for v in hist],
+                                                               cores_var=(neg, pos), apagadas=[len(hist) - 1]), 380)
+    st.caption(f"**A meta de 2027 é uma só, para todos os públicos:** {mil(x.meta)} ({pct(x.meta / x.base - 1, 1, sinal=True)} sobre a projeção de 2026, de {mil(x.base)}).")
 
 
 def _grade(colunas: list[str], linhas: list[list[str]], destaque: int | None = None) -> None:
@@ -113,12 +134,14 @@ def _formula(f, p: dict, escopo: int) -> None:
             st.latex(rf"\text{{Crescimento padrão}} = |\,{lx(real * 100, 2)}\%\,|")
         st.latex(rf"\boxed{{\text{{Crescimento padrão}} = {lx(g * 100, 2)}\%}}")
         st.caption("A porcentagem será igual para todas as unidades.")
+        if real < 0:
+            st.caption("Quando o crescimento médio for negativo, a porcentagem entrará sem o sinal, como esforço para recuperar parte da queda.")
     with _quadro(b, "2. Esforço de mercado"):
         _grade(["Espaço para crescer", "Esforço de mercado"], [[y, pct(z, 0)] for y, z in zip(M.POTENCIAL, M.ESFORCOS)])
         st.caption("Quanto mais espaço a unidade tiver para crescer, maior será. O espaço vem do mercado potencial (estudo da ESPM) e da lacuna, a parte do mercado que falta atender.")
     st.markdown("**3. Fórmula**")
     st.latex(r"\text{Meta} = \text{Base} + [\,\text{Crescimento padrão} \times (1 + \text{Esforço de mercado})\,]")
-    st.markdown(f"Em que:\n- **Base:** {contados(f)} projetados para o fechamento de 2026;\n- **Crescimento padrão:** a porcentagem igual para todas, aplicada sobre a base;\n"
+    st.markdown(f"Em que:\n- **Base:** {contados(f, meio=True)} projetados para o fechamento de 2026;\n- **Crescimento padrão:** a porcentagem igual para todas, aplicada sobre a base;\n"
                 "- **Esforço de mercado:** o acréscimo de cada unidade sobre o crescimento padrão.")
 
 
@@ -138,7 +161,7 @@ def _exemplo(f, p: dict) -> None:
 
 def _conta_real(f, p: dict, uid: int) -> None:
     m, r, g = p["metas"], p["resumo"], p["delta"]
-    base = (f"Base: {contados(f)} 2026", lambda v: f"{num(v)} (projeção)")
+    base = (f"Base: {contados(f, meio=True)} 2026", lambda v: f"{num(v)} (projeção)")
     if uid == D.NACIONAL:
         gt.cabecalho("A conta real", "Nacional: a soma das metas das unidades", "Escolha uma unidade na barra lateral para ver a conta dela")
         conta([(base[0], base[1](r["base"])), ("Crescimento padrão", f"{num(r['base'])} × {pct(g, 2)} = {num(r['partida'] - r['base'])}"),

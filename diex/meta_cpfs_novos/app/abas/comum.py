@@ -19,15 +19,26 @@ def cor(entidade: str) -> str:
     return ASSUNTOS[assunto(entidade)]
 
 
-def contados(f) -> str:
-    """Nome do que a meta conta na visão escolhida: contagem de 12 meses exatos ou CPFs distintos no ano civil."""
-    return "CPFs novos" if f.doze else "CPFs distintos"
+def contados(f, meio: bool = False) -> str:
+    """Nome do que a meta conta na visão escolhida: contagem de 12 meses exatos ou CPFs distintos no ano civil (`meio`: no meio da frase)."""
+    return (("novos CPFs" if meio else "Novos CPFs") if f.doze else "CPFs distintos")
+
+
+def do_publico(f) -> str:
+    """Complemento do título quando há filtro de público: " · Transporte (com dependentes)"."""
+    return "" if not f.publico else " · Transporte (com dependentes)" if f.publico == "Transporte" else f" · {f.publico}"
 
 
 def regra_contagem(f) -> str:
     juntos = " Quem é atendido no SEST e no SENAT da mesma unidade contará uma vez." if f.entidade == COMBINADA else ""
-    return ("CPFs novos: a pessoa contará na 1ª vez na unidade ou quando voltar depois de 12 meses ou mais." if f.doze else
+    return ("Novos CPFs: a pessoa contará na 1ª vez na unidade ou quando voltar depois de 12 meses ou mais." if f.doze else
             "CPFs distintos: cada pessoa contará uma vez por unidade e por ano, de janeiro a dezembro.") + juntos
+
+
+def publico_nota(f) -> str:
+    """Como o público é definido (só com o filtro ligado), para as notas de rodapé."""
+    return "" if not f.publico else ("Público: a classe do cliente no dia em que foi contado, como está no SIGOP; o dependente segue o titular, e os empregados do SEST SENAT entram no transporte. "
+                                     + ("No cenário B, as turmas do SEST usam o cadastro atual. " if f.entidade != "SENAT" else ""))
 
 
 # O que entra em cada base da proposta (entidade → escopo).

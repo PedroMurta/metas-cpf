@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 
-from abas.comum import CINZA, assunto, contados, cor, entra, mil, nota_media, num, pct, regra_contagem, rotulos_anos
+from abas.comum import CINZA, assunto, contados, cor, do_publico, entra, mil, nota_media, num, pct, publico_nota, regra_contagem, rotulos_anos
 from common.metas import media_geometrica
 from common.painel.classico import FORTE, divergente
 from common import painel as gt
@@ -19,7 +19,7 @@ def _recorte(f) -> tuple[tuple, str]:
     """Recorte próprio da aba: as duas bases da proposta, na entidade escolhida."""
     rotulos = D.ESCOPO[f.entidade]
     escopo = st.pills("Cenário da análise", list(rotulos), default=1, key=f"an_esc_{f.entidade}", format_func=rotulos.get) or 1
-    return (f.entidade, D.selecao_proposta(escopo, f.entidade), f.medida, f.ano), f"{D.nome(f.entidade)} · {rotulos[escopo]}: {entra(f.entidade, escopo)}"
+    return (f.entidade, D.selecao_proposta(escopo, f.entidade), f.medida, f.ano, f.publico), f"{D.nome(f.entidade)}{do_publico(f)} · {rotulos[escopo]}: {entra(f.entidade, escopo)}"
 
 
 def _evolucao(f, a, chave, rotulo) -> None:
@@ -28,7 +28,7 @@ def _evolucao(f, a, chave, rotulo) -> None:
     if f.unidade in a["pessoas"].index:
         serie, nome = s.xs(f.unidade, level="id_unidade").contagem, a["unidades"].rotulo.get(f.unidade)
     else:
-        serie, nome = a["total"].contagem, f"{D.nome(f.entidade)}, {len(a['pessoas'])} unidades analisadas"
+        serie, nome = a["total"].contagem, f"{D.nome(f.entidade)}{do_publico(f)}, {len(a['pessoas'])} unidades analisadas"
     v = serie / serie.iloc[0] - 1
     anos = len(serie) - 1
     g = media_geometrica(serie.iloc[0], serie.iloc[-1], anos)
@@ -85,7 +85,7 @@ def render(f) -> None:
         c = a["cres"]
         linhas = []
         for ano in (2024, 2025, 2026):
-            for m, nome in (("contagem", contados(f)), ("producao", medida.capitalize())):
+            for m, nome in (("contagem", contados(f)), ("producao", medida.capitalize()))[:1 if f.publico else 2]:     # a produção não é aberta por público
                 v = c[m][ano].replace([np.inf, -np.inf], np.nan).dropna()
                 linhas.append({"Ano": f"{ano}{' (projeção)' if ano == 2026 else ''}", "Medida": nome,
                                "Total": pct(t.loc[ano, m] / t.loc[ano - 1, m] - 1, 1, sinal=True),
@@ -106,7 +106,7 @@ def render(f) -> None:
         nome = u.rotulo.get(f.unidade) if f.unidade != D.NACIONAL else None
         gt.tabela(df, destaque=("Unidade", nome) if nome else None, texto=2, altura=480)
 
-    nota(f"{regra_contagem(f)} "
+    nota(f"{regra_contagem(f)} {publico_nota(f)}"
          f"Unidades inauguradas até {a['inaug_ate']} (5 anos ou mais em 2023) e com produção nos 12 meses de 2023, "
          "2024 e 2025 no recorte escolhido. Assim, abertura de unidade ou de especialidade no meio do período não "
          "infla o crescimento. 2026 é projeção com base histórica.")

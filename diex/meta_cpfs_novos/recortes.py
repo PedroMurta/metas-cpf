@@ -13,12 +13,13 @@ import pandas as pd
 
 AQUI = Path(__file__).parent
 DADOS = AQUI / "dados"
-GRUPOS, MASCARAS, PRODUCAO, RECORTES, CONTAGEM, CONTAGEM_MES = (DADOS / f"{n}.parquet" for n in (
-    "grupos", "mascaras", "producao", "recortes", "contagem", "contagem_mensal"))
+GRUPOS, MASCARAS, PRODUCAO, RECORTES, CONTAGEM, CONTAGEM_MES, PUBLICO = (DADOS / f"{n}.parquet" for n in (
+    "grupos", "mascaras", "producao", "recortes", "contagem", "contagem_mensal", "publico"))
 CORTE = 10            # último mês fechado do ano corrente
 ANO_CORRENTE = 2026
 COMBINADA = "SEST + SENAT"   # pessoa conta uma vez na unidade, seja atendida no SEST ou no SENAT
 ENTIDADES = ("SEST", "SENAT", COMBINADA)
+PUBLICOS = ("Transporte", "Comunidade")     # Transporte inclui os dependentes
 AREAS_SEST = ["Odontologia", "Fisioterapia", "Psicologia", "Nutrição"]
 SENAT_FORA = {"Palestras", "Educação de Jovens e Adultos"}   # fora das especialidades filtradas do SENAT (como no meta_cpfs)
 CAMPANHA = "Campanha · "     # prefixo dos tipos de campanha (SEST)
@@ -107,10 +108,11 @@ def novos_area(entidade: str, area: str, selecao: list[str] | None = None) -> pd
     """)
 
 
-def contagem(entidade: str, selecao: list[str] | None = None) -> pd.DataFrame:
-    """Unidade × ano: pessoas contadas pela regra de 12 meses exatos (contagem.py), no ano e até o CORTE."""
-    r = sql(f"""SELECT id_unidade, ano, contagem, contagem_corte FROM '{CONTAGEM}'
-                       WHERE entidade = '{entidade}' AND chave = {bits(entidade, selecao)}""")
+def contagem(entidade: str, selecao: list[str] | None = None, publico: str | None = None) -> pd.DataFrame:
+    """Unidade × ano: pessoas contadas pela regra de 12 meses exatos (contagem.py), no ano e até o CORTE; `publico`: só as dele (publico.py)."""
+    filtro = f"AND publico = '{publico}'" if publico else ""
+    r = sql(f"""SELECT id_unidade, ano, contagem, contagem_corte FROM '{PUBLICO if publico else CONTAGEM}'
+                       WHERE entidade = '{entidade}' AND chave = {bits(entidade, selecao)} {filtro}""")
     assert len(r), f"contagem de 12 meses não preparada: {entidade} {selecao}"
     return r
 

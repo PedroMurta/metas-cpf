@@ -10,6 +10,7 @@ from scripts import dados as D
 from scripts.apresentacao import botao
 
 VISOES = ["12 meses", "Exercício anual"]
+TODOS = "Todos"
 VISAO_ANUAL = False     # exercício anual oculto (decisão de 25/11: vale a contagem de 12 meses)
 
 
@@ -18,6 +19,7 @@ class Filtros:
     entidade: str      # SEST, SENAT ou SEST + SENAT
     unidade: int
     ano: bool = False  # visão: exercício anual (True) ou 12 meses (False, o padrão)
+    publico: str | None = None   # Transporte, Comunidade ou todos (None): não muda a meta
     peso: int = 10     # % do gap: só nas abas ocultas (Propostas 1 e 2)
 
     @property
@@ -26,7 +28,7 @@ class Filtros:
 
     @property
     def chave(self) -> str:
-        return f"{self.entidade.replace(' + ', '_')}_{'12m' if self.doze else 'ano'}"
+        return f"{self.entidade.replace(' + ', '_')}_{'12m' if self.doze else 'ano'}{'_' + self.publico.lower() if self.publico else ''}"
 
     @property
     def medida(self) -> str:
@@ -50,9 +52,13 @@ def filtros() -> Filtros:
             unidade = st.selectbox("Unidade", ids, key="sb_unidade", format_func=lambda i: D.nome_unidade(p, i),
                                    help="Nacional soma as unidades com meta.")
 
+        with secao_lateral("Público", "publico"):
+            publico = st.pills("Público", [TODOS, *R.PUBLICOS], default=TODOS, key="sb_publico", label_visibility="collapsed") or TODOS
+            st.caption("Transporte inclui os dependentes. O filtro muda a aba Análise e, na Proposta, a Evolução e a tabela por unidade. A meta não muda.")
+
         botao()
         st.caption(f":material/event_available: **{R.ANO_CORRENTE} é projeção** com base histórica.")
-    return Filtros(entidade, int(unidade))
+    return Filtros(entidade, int(unidade), publico=None if publico == TODOS else publico)
 
 
 def visao(f: Filtros) -> Filtros:
