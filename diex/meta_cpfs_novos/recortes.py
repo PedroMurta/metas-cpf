@@ -13,8 +13,8 @@ import pandas as pd
 
 AQUI = Path(__file__).parent
 DADOS = AQUI / "dados"
-GRUPOS, MASCARAS, PRODUCAO, RECORTES, CONTAGEM, CONTAGEM_MES, PUBLICO = (DADOS / f"{n}.parquet" for n in (
-    "grupos", "mascaras", "producao", "recortes", "contagem", "contagem_mensal", "publico"))
+GRUPOS, MASCARAS, PRODUCAO, RECORTES, CONTAGEM, CONTAGEM_MES, PUBLICO, PERFIL, PERFIL_EMPRESAS = (DADOS / f"{n}.parquet" for n in (
+    "grupos", "mascaras", "producao", "recortes", "contagem", "contagem_mensal", "publico", "perfil", "perfil_empresas"))
 CORTE = 10            # último mês fechado do ano corrente
 ANO_CORRENTE = 2026
 COMBINADA = "SEST + SENAT"   # pessoa conta uma vez na unidade, seja atendida no SEST ou no SENAT

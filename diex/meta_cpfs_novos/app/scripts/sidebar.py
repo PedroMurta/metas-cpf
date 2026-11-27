@@ -54,7 +54,7 @@ def filtros() -> Filtros:
 
         with secao_lateral("Público", "publico"):
             publico = st.pills("Público", [TODOS, *R.PUBLICOS], default=TODOS, key="sb_publico", label_visibility="collapsed") or TODOS
-            st.caption("Transporte inclui os dependentes. O filtro muda a aba Análise e, na Proposta, a Evolução e a tabela por unidade. A meta não muda.")
+            st.caption("Transporte inclui os dependentes. O filtro muda as abas Análise e Perfil dos CPFs e, na Proposta, a Evolução e a tabela por unidade. A meta não muda.")
 
         botao()
         st.caption(f":material/event_available: **{R.ANO_CORRENTE} é projeção** com base histórica.")

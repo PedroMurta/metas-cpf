@@ -6,6 +6,7 @@ import streamlit as st
 from common import painel as gt
 from common.painel.classico import ASSUNTOS, CONTEXTO
 from recortes import ANO_CORRENTE, COMBINADA
+from scripts import dados as D
 
 CINZA = CONTEXTO
 
@@ -109,3 +110,15 @@ def baixar_excel(df, nome: str, chave: str) -> None:
     df.to_excel(buf, index=False)
     st.download_button("Baixar Excel", buf.getvalue(), file_name=nome, key=chave,
                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+
+def cenario(f, prefixo: str, rotulo: str = "Cenário") -> int:
+    """Seletor de cenário da aba (as duas bases da proposta) com o quadro do que entra em cada um. Abas Análise e Perfil dos CPFs."""
+    rotulos = D.ESCOPO[f.entidade]
+    escopo = st.pills(rotulo, list(rotulos), default=1, key=f"{prefixo}_esc_{f.entidade}", format_func=rotulos.get) or 1
+    with gt.cartao(f"{prefixo}_cenarios"):
+        gt.cabecalho(f"{D.nome(f.entidade)} · {do_publico(f)} · cenário escolhido", f"{rotulos[escopo]}: {entra(f.entidade, escopo)}",
+                     "Use o seletor acima para trocar de cenário e a barra lateral para trocar de público. Toda a aba muda junto.")
+        grade(["Cenário", "O que entra"], [[nome, ENTRA[f.entidade][n]] for n, nome in rotulos.items()], list(rotulos).index(escopo))
+        cenarios_aviso(f.entidade)
+    return escopo

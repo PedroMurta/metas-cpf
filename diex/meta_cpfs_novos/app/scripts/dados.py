@@ -182,3 +182,62 @@ def maduras(entidade: str, selecao: tuple[str, ...] | None, medida: str, ano: bo
             "geometrica": media_geometrica(cp[cp.columns[0]].where(cp[cp.columns[0]] > 0), cp[cp.columns[-1]], anos),
             "unidades": u.loc[u.index.intersection(cp.index, sort=False)], "n_total": len(u),
             "inaug_ate": M.ANO_MADURA - M.IDADE_MADURA}
+
+
+# Aba Perfil dos CPFs: todas as pessoas atendidas (CPFs distintos por unidade e ano civil; perfil.py) -------------------------------------------
+SEXOS = ["Feminino", "Masculino", "Não informado"]
+FAIXAS_IDADE = ["0 a 11", "12 a 17", "18 a 29", "30 a 39", "40 a 49", "50 a 59", "60 ou mais", "Não informado"]
+ADULTOS = FAIXAS_IDADE[2:7]
+FAIXAS_FREQ = ["1", "2 a 5", "6 a 10", "11 a 20", "mais de 20"]
+INSTRUCAO = ["Sem instrução", "Fundamental incompleto", "Fundamental completo", "Médio incompleto", "Médio completo",
+             "Superior incompleto", "Superior completo", "Pós-graduação", "Não informado"]
+MEDIO_OU_MAIS = INSTRUCAO[4:8]
+ANOS_PERFIL = [2023, 2024, 2025, R.ANO_CORRENTE]
+
+
+def _chave(entidade: str, escopo: int) -> int:
+    return R.bits(entidade, R.selecao(entidade, escopo))
+
+
+def _ids(entidade: str) -> list[int]:
+    return [int(i) for i in mercado(entidade)["unidades"].index]
+
+
+@st.cache_data(show_spinner="Montando o perfil…")
+def perfil(entidade: str, escopo: int, unidade: int) -> pd.DataFrame:
+    """Ano × público × vínculo × sexo × idade × instrução × frequência → pessoas, atendimentos e horas, da unidade ou, no Nacional, somando as
+    unidades com meta (quem é atendido em duas unidades conta nas duas)."""
+    ids = _ids(entidade) if unidade == NACIONAL else [int(unidade)]
+    return R.sql(f"""SELECT ano, publico, vinculo, sexo, faixa_etaria, instrucao, faixa_freq, sum(pessoas)::BIGINT AS pessoas,
+                            sum(atendimentos)::BIGINT AS atendimentos, sum(horas)::DOUBLE AS horas
+                     FROM '{R.PERFIL}' WHERE entidade = $e AND chave = $c AND id_unidade IN (SELECT unnest($ids)) GROUP BY ALL""",
+                 {"e": entidade, "c": _chave(entidade, escopo), "ids": ids})
+
+
+@st.cache_data(show_spinner=False)
+def perfil_unidades(entidade: str, escopo: int, ano: int, publico: str | None) -> pd.DataFrame:
+    """Indicadores do perfil por unidade com meta, no ano e no público, para a tabela de comparação."""
+    filtro = "AND publico = $p" if publico else ""
+    d = R.sql(f"""
+        SELECT id_unidade, sum(pessoas)::BIGINT AS pessoas, sum(atendimentos)::BIGINT AS atendimentos, sum(horas)::DOUBLE AS horas,
+               coalesce(sum(pessoas) FILTER (WHERE sexo = 'Feminino'), 0) AS mulheres,
+               coalesce(sum(pessoas) FILTER (WHERE publico = 'Transporte'), 0) AS transporte,
+               coalesce(sum(pessoas) FILTER (WHERE vinculo = 'Dependente'), 0) AS dependentes,
+               coalesce(sum(pessoas) FILTER (WHERE faixa_etaria IN ('40 a 49', '50 a 59', '60 ou mais')), 0) AS de_40,
+               coalesce(sum(pessoas) FILTER (WHERE faixa_etaria <> 'Não informado'), 0) AS com_idade,
+               coalesce(sum(pessoas) FILTER (WHERE faixa_freq = '1'), 0) AS uma_vez,
+               coalesce(sum(pessoas) FILTER (WHERE faixa_etaria IN (SELECT unnest($adultos)) AND instrucao IN (SELECT unnest($medio))), 0) AS medio,
+               coalesce(sum(pessoas) FILTER (WHERE faixa_etaria IN (SELECT unnest($adultos)) AND instrucao <> 'Não informado'), 0) AS com_instrucao
+        FROM '{R.PERFIL}'
+        WHERE entidade = $e AND chave = $c AND ano = $a AND id_unidade IN (SELECT unnest($ids)) {filtro}
+        GROUP BY id_unidade""", {"e": entidade, "c": _chave(entidade, escopo), "a": ano, "ids": _ids(entidade), "adultos": ADULTOS,
+                                 "medio": MEDIO_OU_MAIS, **({"p": publico} if publico else {})})
+    return d.set_index("id_unidade")
+
+
+@st.cache_data(show_spinner=False)
+def empresas(entidade: str, escopo: int, unidade: int, ano: int) -> pd.DataFrame:
+    """Empresas dos titulares (cadastro atual, só o nome; menos de 5 pessoas = "Demais empresas"), da unidade ou do Nacional (id 0)."""
+    return R.sql(f"""SELECT empresa, pessoas::BIGINT AS pessoas, atendimentos::BIGINT AS atendimentos, horas::DOUBLE AS horas, empresas::BIGINT AS empresas
+                     FROM '{R.PERFIL_EMPRESAS}' WHERE entidade = $e AND chave = $c AND id_unidade = $u AND ano = $a ORDER BY pessoas DESC""",
+                 {"e": entidade, "c": _chave(entidade, escopo), "u": int(unidade), "a": ano})
